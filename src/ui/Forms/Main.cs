@@ -227,6 +227,7 @@ namespace Nikse.SubtitleEdit.Forms
 
         private bool AutoRepeatOn => tabControlModes.SelectedIndex == 0 && checkBoxAutoRepeatOn.Checked;
 
+        public const string LanesVersion = "0.1";
         public string Title
         {
             get
@@ -234,7 +235,7 @@ namespace Nikse.SubtitleEdit.Forms
                 if (_title == null)
                 {
                     var versionInfo = Utilities.AssemblyVersion.Split('.');
-                    _title = $"{_languageGeneral.Title} {versionInfo[0]}.{versionInfo[1]}.{versionInfo[2]}";
+                    _title = $"{_languageGeneral.Title} {versionInfo[0]}.{versionInfo[1]}.{versionInfo[2]} — Lanes {LanesVersion}";
                 }
 
                 return _title;
