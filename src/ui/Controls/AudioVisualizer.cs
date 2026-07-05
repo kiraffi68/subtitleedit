@@ -11,6 +11,7 @@ using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Nikse.SubtitleEdit.Core.Forms;
+using Nikse.SubtitleEdit.Core.SubtitleFormats;
 using System.Diagnostics;
 using System.Drawing.Imaging;
 
@@ -92,6 +93,14 @@ namespace Nikse.SubtitleEdit.Controls
         private MouseDownParagraphType _mouseDownParagraphType = MouseDownParagraphType.Start;
         private readonly List<Paragraph> _displayableParagraphs;
         private readonly List<Paragraph> _allSelectedParagraphs;
+
+        // === Lane mode (multi-track style view for overlapping subtitles) ===
+        public bool LanesEnabled { get; set; } = true;
+        public int MaxLanes { get; set; } = 4;
+        private readonly Dictionary<string, int> _laneByParagraphId = new Dictionary<string, int>();
+        private int _laneCount = 1;
+        private readonly Dictionary<string, Color> _styleColors = new Dictionary<string, Color>();
+        private string _styleColorsHeader;
         private Paragraph _prevParagraph;
         private Paragraph _nextParagraph;
         private bool _firstMove = true;
@@ -440,6 +449,7 @@ namespace Nikse.SubtitleEdit.Controls
 
         private void LoadParagraphs(Subtitle subtitle, int primarySelectedIndex, ListView.SelectedIndexCollection selectedIndexes)
         {
+            BuildStyleColors(subtitle.Header);
             _subtitle.Paragraphs.Clear();
             _displayableParagraphs.Clear();
             SelectedParagraph = null;
@@ -478,7 +488,8 @@ namespace Nikse.SubtitleEdit.Controls
             var lastStartTime = -1d;
             foreach (var p in displayableParagraphs)
             {
-                if (displayableParagraphs.Count > 30 &&
+                if (!LanesEnabled &&
+                    displayableParagraphs.Count > 30 &&
                     (p.DurationTotalMilliseconds < 0.01 || p.StartTime.TotalMilliseconds - lastStartTime < 90))
                 {
                     continue;
@@ -487,6 +498,8 @@ namespace Nikse.SubtitleEdit.Controls
                 _displayableParagraphs.Add(p);
                 lastStartTime = p.StartTime.TotalMilliseconds;
             }
+
+            AssignLanes();
 
             var primaryParagraph = subtitle.GetParagraphOrDefault(primarySelectedIndex);
             if (primaryParagraph != null && !primaryParagraph.StartTime.IsMaxTime)
@@ -502,6 +515,172 @@ namespace Nikse.SubtitleEdit.Controls
                 {
                     _allSelectedParagraphs.Add(p);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Greedy interval packing: overlapping paragraphs get pushed to the next free lane,
+        /// like overlapping clips auto-stacking in a video editor timeline.
+        /// _displayableParagraphs must already be sorted by start time.
+        /// </summary>
+        private void AssignLanes()
+        {
+            _laneByParagraphId.Clear();
+            _laneCount = 1;
+            if (!LanesEnabled)
+            {
+                return;
+            }
+
+            var laneEndTimes = new List<double>();
+            foreach (var p in _displayableParagraphs)
+            {
+                var lane = -1;
+                for (var i = 0; i < laneEndTimes.Count; i++)
+                {
+                    if (p.StartTime.TotalMilliseconds >= laneEndTimes[i] - 1)
+                    {
+                        lane = i;
+                        break;
+                    }
+                }
+
+                if (lane < 0)
+                {
+                    if (laneEndTimes.Count < MaxLanes)
+                    {
+                        laneEndTimes.Add(0);
+                        lane = laneEndTimes.Count - 1;
+                    }
+                    else
+                    {
+                        lane = laneEndTimes.Count - 1; // overflow: dump into last lane
+                    }
+                }
+
+                laneEndTimes[lane] = Math.Max(laneEndTimes[lane], p.EndTime.TotalMilliseconds);
+                _laneByParagraphId[p.Id] = lane;
+            }
+
+            _laneCount = Math.Max(1, laneEndTimes.Count);
+        }
+
+        private void GetLaneBand(Paragraph paragraph, int totalHeight, out int laneTop, out int laneHeight)
+        {
+            laneTop = 0;
+            laneHeight = totalHeight;
+            if (LanesEnabled && _laneCount > 1 && _laneByParagraphId.TryGetValue(paragraph.Id, out var lane))
+            {
+                laneHeight = totalHeight / _laneCount;
+                laneTop = lane * laneHeight;
+            }
+        }
+
+        /// <summary>
+        /// Parses the ASSA header (once per header change) and caches a display color per style:
+        /// the more saturated of PrimaryColour/OutlineColour, since variety styles are often
+        /// white text with a colored outline.
+        /// </summary>
+        private void BuildStyleColors(string header)
+        {
+            if (header == _styleColorsHeader)
+            {
+                return;
+            }
+
+            _styleColorsHeader = header;
+            _styleColors.Clear();
+            if (string.IsNullOrEmpty(header))
+            {
+                return;
+            }
+
+            try
+            {
+                foreach (var styleName in AdvancedSubStationAlpha.GetStylesFromHeader(header))
+                {
+                    var style = AdvancedSubStationAlpha.GetSsaStyle(styleName, header);
+                    if (style == null)
+                    {
+                        continue;
+                    }
+
+                    var c = PickDisplayColor(style.Primary, style.Outline);
+                    _styleColors[styleName] = c;
+                }
+            }
+            catch
+            {
+                // never let a malformed header break painting
+            }
+        }
+
+        private static Color PickDisplayColor(Color primary, Color outline)
+        {
+            var primaryUsable = primary.GetSaturation() > 0.15f && primary.GetBrightness() > 0.1f;
+            var outlineUsable = outline.GetSaturation() > 0.15f && outline.GetBrightness() > 0.1f;
+            if (primaryUsable && outlineUsable)
+            {
+                return primary.GetSaturation() >= outline.GetSaturation() ? primary : outline;
+            }
+
+            if (primaryUsable)
+            {
+                return primary;
+            }
+
+            if (outlineUsable)
+            {
+                return outline;
+            }
+
+            return Color.Empty; // both are white/black/gray - caller falls back to hashed hue
+        }
+
+        private Color GetStyleColor(Paragraph paragraph)
+        {
+            var styleName = paragraph.Extra;
+            if (string.IsNullOrEmpty(styleName))
+            {
+                styleName = paragraph.Style;
+            }
+
+            if (string.IsNullOrEmpty(styleName))
+            {
+                return Color.FromArgb(255, 255, 255);
+            }
+
+            if (_styleColors.TryGetValue(styleName, out var color) && color != Color.Empty)
+            {
+                return color;
+            }
+
+            var hash = 17;
+            foreach (var ch in styleName)
+            {
+                hash = unchecked(hash * 31 + ch);
+            }
+
+            return ColorFromHsv(Math.Abs(hash) % 360, 0.65, 0.95);
+        }
+
+        private static Color ColorFromHsv(double hue, double saturation, double value)
+        {
+            var hi = Convert.ToInt32(Math.Floor(hue / 60)) % 6;
+            var f = hue / 60 - Math.Floor(hue / 60);
+            value = value * 255;
+            var v = Convert.ToInt32(value);
+            var p = Convert.ToInt32(value * (1 - saturation));
+            var q = Convert.ToInt32(value * (1 - f * saturation));
+            var t = Convert.ToInt32(value * (1 - (1 - f) * saturation));
+            switch (hi)
+            {
+                case 0: return Color.FromArgb(v, t, p);
+                case 1: return Color.FromArgb(q, v, p);
+                case 2: return Color.FromArgb(p, v, t);
+                case 3: return Color.FromArgb(p, q, v);
+                case 4: return Color.FromArgb(t, p, v);
+                default: return Color.FromArgb(v, p, q);
             }
         }
 
@@ -1012,22 +1191,46 @@ namespace Nikse.SubtitleEdit.Controls
             var currentRegionRight = SecondsToXPosition(paragraph.EndTime.TotalSeconds - _startPositionSeconds);
             var currentRegionWidth = currentRegionRight - currentRegionLeft;
 
-            // background
-            using (var brush = new SolidBrush(Color.FromArgb(42, 255, 255, 255)))
+            GetLaneBand(paragraph, (int)graphics.VisibleClipBounds.Height, out var laneTop, out var laneHeight);
+            var laneBottom = laneTop + laneHeight;
+
+            // background (tinted by ASSA style in lane mode)
+            var backColor = LanesEnabled ? GetStyleColor(paragraph) : Color.FromArgb(255, 255, 255);
+            using (var brush = new SolidBrush(Color.FromArgb(70, backColor)))
             {
-                graphics.FillRectangle(brush, currentRegionLeft, 0, currentRegionWidth, graphics.VisibleClipBounds.Height);
+                graphics.FillRectangle(brush, currentRegionLeft, laneTop, currentRegionWidth, laneHeight);
+            }
+
+            // solid style-colored strip along the top of the block (DAW clip header look)
+            if (LanesEnabled)
+            {
+                using (var stripBrush = new SolidBrush(Color.FromArgb(220, backColor)))
+                {
+                    graphics.FillRectangle(stripBrush, currentRegionLeft, laneTop, currentRegionWidth, 4);
+                }
             }
 
             // left edge
             using (var pen = new Pen(new SolidBrush(Color.FromArgb(175, 0, 100, 0))) { DashStyle = DashStyle.Solid, Width = 2 })
             {
-                graphics.DrawLine(pen, currentRegionLeft, 0, currentRegionLeft, graphics.VisibleClipBounds.Height);
+                graphics.DrawLine(pen, currentRegionLeft, laneTop, currentRegionLeft, laneBottom);
             }
 
             // right edge
             using (var pen = new Pen(new SolidBrush(Color.FromArgb(175, 110, 10, 10))) { DashStyle = DashStyle.Dash, Width = 2 })
             {
-                graphics.DrawLine(pen, currentRegionRight - 1, 0, currentRegionRight - 1, graphics.VisibleClipBounds.Height);
+                graphics.DrawLine(pen, currentRegionRight - 1, laneTop, currentRegionRight - 1, laneBottom);
+            }
+
+            // full-height dotted timing guides so lane blocks stay visually aligned with the waveform
+            if (LanesEnabled && _laneCount > 1)
+            {
+                var fullHeight = (int)graphics.VisibleClipBounds.Height;
+                using (var guidePen = new Pen(Color.FromArgb(200, backColor)) { DashStyle = DashStyle.Dash, Width = 1 })
+                {
+                    graphics.DrawLine(guidePen, currentRegionLeft, 0, currentRegionLeft, fullHeight);
+                    graphics.DrawLine(guidePen, currentRegionRight - 1, 0, currentRegionRight - 1, fullHeight);
+                }
             }
 
             using (var font = new Font(Configuration.Settings.General.SubtitleFontName, TextSize, TextBold ? FontStyle.Bold : FontStyle.Regular))
@@ -1051,7 +1254,7 @@ namespace Nikse.SubtitleEdit.Controls
                 if (paragraph.Bookmark != null)
                 {
                     var x = currentRegionLeft + padding;
-                    var y = Height / 2 + (int)graphics.MeasureString("xx", font).Height / 2 + 2;
+                    var y = laneTop + laneHeight / 2 + (int)graphics.MeasureString("xx", font).Height / 2 + 2;
 
                     using (var bookmarkBackBrush = new SolidBrush(Color.FromArgb(255, 250, 205)))
                     {
@@ -1087,7 +1290,7 @@ namespace Nikse.SubtitleEdit.Controls
                         text = text.Replace(Environment.NewLine, "  ");
                     }
 
-                    DrawParagraphText(graphics, text, font, currentRegionWidth, padding, drawStringOutlined, currentRegionLeft);
+                    DrawParagraphText(graphics, text, font, currentRegionWidth, padding, drawStringOutlined, currentRegionLeft, laneTop);
                 }
 
                 // paragraph number
@@ -1125,12 +1328,12 @@ namespace Nikse.SubtitleEdit.Controls
                             }
                         }
                     }
-                    drawStringOutlined(text, currentRegionLeft + padding, Height - 14 - (int)graphics.MeasureString(text, font).Height);
+                    drawStringOutlined(text, currentRegionLeft + padding, laneBottom - 4 - (int)graphics.MeasureString(text, font).Height);
                 }
             }
         }
 
-        private void DrawParagraphText(Graphics graphics, string text, Font font, int currentRegionWidth, int padding, Action<string, int, int> drawStringOutlined, int currentRegionLeft)
+        private void DrawParagraphText(Graphics graphics, string text, Font font, int currentRegionWidth, int padding, Action<string, int, int> drawStringOutlined, int currentRegionLeft, int laneTop = 0)
         {
             if (Configuration.Settings.General.RightToLeftMode && LanguageAutoDetect.CouldBeRightToLeftLanguage(new Subtitle(_displayableParagraphs)))
             {
@@ -1142,7 +1345,7 @@ namespace Nikse.SubtitleEdit.Controls
                 text = text.Substring(0, 255); // don't now allow very long texts as they can make SE unresponsive - see https://github.com/SubtitleEdit/subtitleedit/issues/2536
             }
 
-            var y = padding;
+            var y = laneTop + padding;
             var max = currentRegionWidth - padding - 1;
             foreach (var line in text.SplitToLines())
             {
@@ -1288,7 +1491,7 @@ namespace Nikse.SubtitleEdit.Controls
                 }
                 else
                 {
-                    var p = GetParagraphAtMilliseconds(milliseconds);
+                    var p = GetParagraphAtMilliseconds(milliseconds, e.Y);
                     if (p != null)
                     {
                         _oldParagraph = new Paragraph(p);
@@ -1351,7 +1554,7 @@ namespace Nikse.SubtitleEdit.Controls
                     }
                     else
                     {
-                        var p = GetParagraphAtMilliseconds(milliseconds);
+                        var p = GetParagraphAtMilliseconds(milliseconds, e.Y);
                         RightClickedParagraph = p;
                         RightClickedSeconds = seconds;
                         if (p != null)
@@ -1488,8 +1691,26 @@ namespace Nikse.SubtitleEdit.Controls
             return false;
         }
 
-        private Paragraph GetParagraphAtMilliseconds(int milliseconds)
+        private Paragraph GetParagraphAtMilliseconds(int milliseconds, int mouseY = -1)
         {
+            // In lane mode, prefer the paragraph whose lane band contains the mouse Y,
+            // so overlapping subtitles are individually clickable.
+            if (LanesEnabled && mouseY >= 0 && _laneCount > 1 && Height > 0)
+            {
+                var laneHeight = Math.Max(1, Height / _laneCount);
+                var mouseLane = Math.Min(mouseY / laneHeight, _laneCount - 1);
+                foreach (var pLane in _displayableParagraphs)
+                {
+                    if (IsParagraphHit(milliseconds, pLane) &&
+                        _laneByParagraphId.TryGetValue(pLane.Id, out var lane) &&
+                        lane == mouseLane)
+                    {
+                        return pLane;
+                    }
+                }
+                // nothing in that lane at this time — fall back to time-only hit test
+            }
+
             Paragraph p = null;
             if (IsParagraphHit(milliseconds, SelectedParagraph))
             {
@@ -2073,7 +2294,7 @@ namespace Nikse.SubtitleEdit.Controls
                 var seconds = RelativeXPositionToSeconds(e.X);
                 var milliseconds = (int)(seconds * TimeCode.BaseUnit);
 
-                var p = GetParagraphAtMilliseconds(milliseconds);
+                var p = GetParagraphAtMilliseconds(milliseconds, e.Y);
                 if (p != null)
                 {
                     seconds = p.StartTime.TotalSeconds;
@@ -2176,7 +2397,7 @@ namespace Nikse.SubtitleEdit.Controls
                     {
                         var seconds = RelativeXPositionToSeconds(e.X);
                         var milliseconds = (int)(seconds * TimeCode.BaseUnit);
-                        var p = GetParagraphAtMilliseconds(milliseconds);
+                        var p = GetParagraphAtMilliseconds(milliseconds, e.Y);
                         OnSingleClick?.Invoke(this, new ParagraphEventArgs(RelativeXPositionToSeconds(e.X), p));
                     }
                 }
