@@ -857,6 +857,9 @@ namespace Nikse.SubtitleEdit.Controls
                     }
                 }
 
+                // timing windows (lead-in / lead-out) for the selected paragraph
+                DrawTimingWindows(graphics);
+
                 // shot changes
                 if (_shotChanges != null)
                 {
@@ -1396,6 +1399,58 @@ namespace Nikse.SubtitleEdit.Controls
         private int SecondsToXPosition(double seconds)
         {
             return (int)Math.Round(seconds * _wavePeaks.SampleRate * _zoomFactor, MidpointRounding.AwayFromZero);
+        }
+
+        // === Timing windows (lead-in / lead-out) for the selected paragraph ===
+        // Amber band inside the start edge: speech should BEGIN inside it (start is 0..N ms early).
+        // Teal band inside the end edge: speech should FADE OUT inside it (end is 0..N ms late).
+        public bool TimingWindowsEnabled { get; set; } = true;
+        public int LeadInWindowMilliseconds { get; set; } = 80;
+        public int LeadOutWindowMilliseconds { get; set; } = 500;
+
+        private void DrawTimingWindows(Graphics graphics)
+        {
+            if (!TimingWindowsEnabled || SelectedParagraph == null)
+            {
+                return;
+            }
+
+            var p = SelectedParagraph;
+            var height = (int)graphics.VisibleClipBounds.Height;
+            var startX = SecondsToXPosition(p.StartTime.TotalSeconds - _startPositionSeconds);
+            var endX = SecondsToXPosition(p.EndTime.TotalSeconds - _startPositionSeconds);
+
+            // lead-in window
+            var inRight = SecondsToXPosition(p.StartTime.TotalSeconds + LeadInWindowMilliseconds / 1000.0 - _startPositionSeconds);
+            inRight = Math.Min(inRight, endX);
+            if (inRight > 0 && startX < Width && inRight > startX)
+            {
+                using (var brush = new SolidBrush(Color.FromArgb(60, 239, 159, 39)))
+                {
+                    graphics.FillRectangle(brush, startX, 0, inRight - startX, height);
+                }
+
+                using (var pen = new Pen(Color.FromArgb(170, 239, 159, 39)) { DashStyle = DashStyle.Dot })
+                {
+                    graphics.DrawLine(pen, inRight, 0, inRight, height);
+                }
+            }
+
+            // lead-out window (never overlaps the lead-in window on short lines)
+            var outLeft = SecondsToXPosition(p.EndTime.TotalSeconds - LeadOutWindowMilliseconds / 1000.0 - _startPositionSeconds);
+            outLeft = Math.Max(outLeft, inRight);
+            if (endX > 0 && outLeft < Width && endX > outLeft)
+            {
+                using (var brush = new SolidBrush(Color.FromArgb(55, 93, 202, 165)))
+                {
+                    graphics.FillRectangle(brush, outLeft, 0, endX - outLeft, height);
+                }
+
+                using (var pen = new Pen(Color.FromArgb(170, 93, 202, 165)) { DashStyle = DashStyle.Dot })
+                {
+                    graphics.DrawLine(pen, outLeft, 0, outLeft, height);
+                }
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
