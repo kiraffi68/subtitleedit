@@ -107,10 +107,16 @@ namespace Nikse.SubtitleEdit.Forms
             for (int i = 0; i < FixedSubtitle.Paragraphs.Count - 1; i++)
             {
                 Paragraph p = FixedSubtitle.GetParagraphOrDefault(i);
-                Paragraph next = FixedSubtitle.GetParagraphOrDefault(i + 1);
-                if (next.StartTime.TotalMilliseconds - p.EndTime.TotalMilliseconds < minumumMillisecondsBetweenLines)
+                Paragraph next = FixedSubtitle.GetNextParagraphInSameTrack(i);
+                if (next != null && next.StartTime.TotalMilliseconds - p.EndTime.TotalMilliseconds < minumumMillisecondsBetweenLines)
                 {
-                    p.EndTime.TotalMilliseconds = next.StartTime.TotalMilliseconds - minumumMillisecondsBetweenLines;
+                    var newEndMs = next.StartTime.TotalMilliseconds - minumumMillisecondsBetweenLines;
+                    if (newEndMs <= p.StartTime.TotalMilliseconds)
+                    {
+                        continue; // would create zero/negative duration (same-style overlap) - leave for manual fixing
+                    }
+
+                    p.EndTime.TotalMilliseconds = newEndMs;
                     fixes.Add(i);
                     onlyFixedSubtitle.Paragraphs.Add(new Paragraph(p));
                 }

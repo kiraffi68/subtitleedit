@@ -426,6 +426,73 @@ namespace Nikse.SubtitleEdit.Core.Common
             }
         }
 
+        // === Style-aware tracks (multi-track fork) ===
+        // When enabled, duration-adjustment tools treat each ASSA style as its own track:
+        // a line's end time is only capped by the next line of the SAME style, so
+        // intentional cross-speaker overlaps are left alone. Files without styles
+        // (SRT etc.) behave exactly like upstream, since all lines share one track key.
+        public static bool StyleTracksEnabled { get; set; } = true;
+
+        private static string GetTrackKey(Paragraph p)
+        {
+            if (!string.IsNullOrEmpty(p.Extra))
+            {
+                return p.Extra;
+            }
+
+            if (!string.IsNullOrEmpty(p.Style))
+            {
+                return p.Style;
+            }
+
+            return string.Empty;
+        }
+
+        /// <summary>
+        /// Gets the paragraph in the same track (ASSA style) that starts closest after the
+        /// start time of the paragraph at <paramref name="index"/>, or simply the next
+        /// paragraph by index when style tracks are disabled. Time-based rather than
+        /// index-based, so files whose lines are not sorted by start time work correctly.
+        /// Returns null if none exists.
+        /// </summary>
+        public Paragraph GetNextParagraphInSameTrack(int index)
+        {
+            var p = GetParagraphOrDefault(index);
+            if (p == null)
+            {
+                return null;
+            }
+
+            if (!StyleTracksEnabled)
+            {
+                return GetParagraphOrDefault(index + 1);
+            }
+
+            var key = GetTrackKey(p);
+            Paragraph best = null;
+            for (var i = 0; i < Paragraphs.Count; i++)
+            {
+                if (i == index)
+                {
+                    continue;
+                }
+
+                var candidate = Paragraphs[i];
+                if (candidate.StartTime.TotalMilliseconds <= p.StartTime.TotalMilliseconds ||
+                    GetTrackKey(candidate) != key)
+                {
+                    continue;
+                }
+
+                if (best == null || candidate.StartTime.TotalMilliseconds < best.StartTime.TotalMilliseconds)
+                {
+                    best = candidate;
+                }
+            }
+
+            return best;
+        }
+
         public void AdjustDisplayTimeUsingPercent(double percent, List<int> selectedIndexes, List<double> shotChanges = null, bool enforceDurationLimits = true)
         {
             for (int i = 0; i < Paragraphs.Count; i++)
@@ -433,9 +500,10 @@ namespace Nikse.SubtitleEdit.Core.Common
                 if (selectedIndexes == null || selectedIndexes.Contains(i))
                 {
                     double nextStartMilliseconds = double.MaxValue;
-                    if (i + 1 < Paragraphs.Count)
+                    var nextInTrack = GetNextParagraphInSameTrack(i);
+                    if (nextInTrack != null)
                     {
-                        nextStartMilliseconds = Paragraphs[i + 1].StartTime.TotalMilliseconds;
+                        nextStartMilliseconds = nextInTrack.StartTime.TotalMilliseconds;
                     }
 
                     double newEndMilliseconds = Paragraphs[i].EndTime.TotalMilliseconds;
@@ -513,9 +581,10 @@ namespace Nikse.SubtitleEdit.Core.Common
         {
             var p = Paragraphs[idx];
             var nextStartTimeInMs = double.MaxValue;
-            if (idx + 1 < Paragraphs.Count)
+            var nextInTrack = GetNextParagraphInSameTrack(idx);
+            if (nextInTrack != null)
             {
-                nextStartTimeInMs = Paragraphs[idx + 1].StartTime.TotalMilliseconds;
+                nextStartTimeInMs = nextInTrack.StartTime.TotalMilliseconds;
             }
             var newEndTimeInMs = p.EndTime.TotalMilliseconds + ms;
 
@@ -602,11 +671,11 @@ namespace Nikse.SubtitleEdit.Core.Common
                 p.EndTime.TotalMilliseconds = originalEndTime;
             }
 
-            var next = GetParagraphOrDefault(index + 1);
+            var next = GetNextParagraphInSameTrack(index);
             var wantedEndMs = p.EndTime.TotalMilliseconds;
             var bestEndMs = double.MaxValue;
 
-            // First check for next subtitle
+            // First check for next subtitle in the same style track
             if (next != null)
             {
                 bestEndMs = next.StartTime.TotalMilliseconds - Configuration.Settings.General.MinimumMillisecondsBetweenLines;
@@ -638,7 +707,7 @@ namespace Nikse.SubtitleEdit.Core.Common
                         continue;
                     }
 
-                    var next = GetParagraphOrDefault(i + 1);
+                    var next = GetNextParagraphInSameTrack(i);
                     var wantedEndMs = p.StartTime.TotalMilliseconds + fixedDurationMilliseconds;
                     var bestEndMs = double.MaxValue;
 
