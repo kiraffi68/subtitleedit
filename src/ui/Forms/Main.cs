@@ -4992,7 +4992,20 @@ namespace Nikse.SubtitleEdit.Forms
             Interlocked.Increment(ref _openSaveCounter);
             ReloadFromSourceView();
             _saveAsCalled = false;
-            SaveSubtitle(GetCurrentSubtitleFormat());
+            var result = SaveSubtitle(GetCurrentSubtitleFormat());
+
+            // Translation mode: also save the original subtitle, so a normal save keeps
+            // both files on disk in sync instead of the original only being saved on exit.
+            // Only when it already has a file name (no surprise dialogs) and has changes.
+            if (result == DialogResult.OK &&
+                _subtitleOriginal != null &&
+                _subtitleOriginal.Paragraphs.Count > 0 &&
+                !string.IsNullOrEmpty(_subtitleOriginalFileName) &&
+                _changeOriginalSubtitleHash != GetFastSubtitleOriginalHash())
+            {
+                SaveOriginalSubtitle(GetCurrentSubtitleFormat());
+            }
+
             Interlocked.Decrement(ref _openSaveCounter);
         }
 
