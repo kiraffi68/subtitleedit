@@ -18150,18 +18150,10 @@ namespace Nikse.SubtitleEdit.Forms
                 mediaPlayer.Play();
                 e.SuppressKeyPress = true;
             }
-            else if (e.Modifiers == Keys.None && e.KeyCode == Keys.Space)
-            {
-                if (!textBoxListViewText.Focused && !textBoxListViewTextOriginal.Focused && !textBoxSource.Focused && mediaPlayer.VideoPlayer != null)
-                {
-                    if (audioVisualizer.Focused || mediaPlayer.Focused || SubtitleListview1.Focused)
-                    {
-                        ResetPlaySelection();
-                        mediaPlayer.TogglePlayPause();
-                        e.SuppressKeyPress = true;
-                    }
-                }
-            }
+            // Fork tweak: removed hard-coded fallback where plain space toggled
+            // play/pause when the waveform/player/list view had focus. Playback is
+            // controlled solely by the Play/pause toggle shortcut, so space behaves
+            // consistently everywhere and cannot trigger playback by accident.
             else if (e.Modifiers == Keys.Alt && e.KeyCode == Keys.D1)
             {
                 if (SubtitleListview1.SelectedItems.Count > 0 && _subtitle != null && mediaPlayer.VideoPlayer != null)
@@ -35757,7 +35749,7 @@ namespace Nikse.SubtitleEdit.Forms
 
         private void TrackBarWaveformPositionKeyDown(object sender, KeyEventArgs e)
         {
-            if (e.KeyCode == Keys.Space)
+            if (e.KeyData == _shortcuts.VideoPlayPauseToggle)
             {
                 mediaPlayer.TogglePlayPause();
                 e.SuppressKeyPress = true;
