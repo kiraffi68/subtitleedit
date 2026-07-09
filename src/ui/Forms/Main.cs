@@ -10233,6 +10233,274 @@ namespace Nikse.SubtitleEdit.Forms
             }
         }
 
+        private static readonly Regex SpeakerTagRegex = new Regex(@"^\s*\[([^\[\]\r\n]+)\][ \t]*", RegexOptions.Compiled);
+
+        private static string GetLeadingSpeakerTag(Paragraph p)
+        {
+            var match = SpeakerTagRegex.Match(p.Text);
+            if (!match.Success)
+            {
+                return null;
+            }
+
+            var tag = match.Groups[1].Value.Trim();
+            return tag.Length == 0 ? null : tag;
+        }
+
+        private void MoveSpeakerTagsToActorToolStripMenuItemClick(object sender, EventArgs e)
+        {
+            var hasOriginal = _subtitleOriginal != null && _subtitleOriginal.Paragraphs.Count > 0;
+
+            var convertWorking = new List<Paragraph>();
+            var convertOriginal = new List<Paragraph>();
+            var mismatchIndices = new List<int>();
+            var mismatchLines = new List<string>();
+
+            if (hasOriginal)
+            {
+                // Only convert pairs whose tags agree; anything one-sided or contradictory is
+                // left completely untouched (both files) and reported.
+                var pairedOriginals = new HashSet<Paragraph>();
+                for (var i = 0; i < _subtitle.Paragraphs.Count; i++)
+                {
+                    var p = _subtitle.Paragraphs[i];
+                    var o = Utilities.GetOriginalParagraph(i, p, _subtitleOriginal.Paragraphs);
+                    if (o != null)
+                    {
+                        pairedOriginals.Add(o);
+                    }
+
+                    var pTag = GetLeadingSpeakerTag(p);
+                    var oTag = o == null ? null : GetLeadingSpeakerTag(o);
+
+                    if (pTag == null && oTag == null)
+                    {
+                        continue;
+                    }
+
+                    if (pTag != null && oTag != null)
+                    {
+                        if (string.Equals(pTag, oTag, StringComparison.OrdinalIgnoreCase))
+                        {
+                            convertWorking.Add(p);
+                            convertOriginal.Add(o);
+                        }
+                        else
+                        {
+                            mismatchIndices.Add(i);
+                            mismatchLines.Add($"#{i + 1}: [{pTag}] vs [{oTag}] - tags differ");
+                        }
+                    }
+                    else if (pTag != null)
+                    {
+                        mismatchIndices.Add(i);
+                        mismatchLines.Add($"#{i + 1}: [{pTag}] only on text, missing on original");
+                    }
+                    else
+                    {
+                        mismatchIndices.Add(i);
+                        mismatchLines.Add($"#{i + 1}: [{oTag}] only on original, missing on text");
+                    }
+                }
+
+                // Tagged original lines that never paired with any working line
+                foreach (var o in _subtitleOriginal.Paragraphs)
+                {
+                    if (pairedOriginals.Contains(o))
+                    {
+                        continue;
+                    }
+
+                    var oTag = GetLeadingSpeakerTag(o);
+                    if (oTag != null)
+                    {
+                        mismatchLines.Add($"{o.StartTime.ToDisplayString()}: [{oTag}] on original line with no matching text line");
+                    }
+                }
+            }
+            else
+            {
+                convertWorking.AddRange(_subtitle.Paragraphs);
+            }
+
+            var unmatchedWorking = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var unmatchedOriginal = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var count = 0;
+            if (convertWorking.Count > 0)
+            {
+                MakeHistoryForUndo("Move [tags] to actor/style");
+                count = MoveSpeakerTagsToActor(convertWorking, _subtitle.Header, unmatchedWorking);
+                if (hasOriginal)
+                {
+                    count += MoveSpeakerTagsToActor(convertOriginal, _subtitleOriginal.Header, unmatchedOriginal);
+                }
+
+                SaveSubtitleListviewIndices();
+                SubtitleListview1.Fill(_subtitle, _subtitleOriginal);
+                RestoreSubtitleListviewIndices();
+                RefreshSelectedParagraph();
+            }
+
+            if (count == 0 && mismatchLines.Count == 0)
+            {
+                ShowStatus("No leading [tags] found");
+                return;
+            }
+
+            ShowStatus($"Moved [tags] to actor on {count} lines" + (mismatchLines.Count > 0 ? $", skipped {mismatchLines.Count} mismatched" : string.Empty));
+
+            if (unmatchedWorking.Count > 0 || unmatchedOriginal.Count > 0)
+            {
+                var sb = new StringBuilder();
+                sb.AppendLine("Tags converted to actor, but no style with a matching name was found");
+                sb.AppendLine("(style left unchanged on those lines):");
+                sb.AppendLine();
+                if (unmatchedWorking.Count > 0)
+                {
+                    sb.AppendLine("In this subtitle:");
+                    foreach (var kvp in unmatchedWorking)
+                    {
+                        sb.AppendLine($"  {kvp.Key}  ({kvp.Value} lines)");
+                    }
+
+                    sb.AppendLine();
+                }
+
+                if (unmatchedOriginal.Count > 0)
+                {
+                    sb.AppendLine("In the original subtitle (check its own [V4+ Styles] header):");
+                    foreach (var kvp in unmatchedOriginal)
+                    {
+                        sb.AppendLine($"  {kvp.Key}  ({kvp.Value} lines)");
+                    }
+                }
+
+                MessageBox.Show(this, sb.ToString(), Title, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+
+            if (mismatchLines.Count > 0)
+            {
+                var sb = new StringBuilder();
+                sb.AppendLine($"{mismatchLines.Count} lines were NOT converted because the tags on text and original disagree:");
+                sb.AppendLine();
+                const int maxShown = 25;
+                foreach (var line in mismatchLines.Take(maxShown))
+                {
+                    sb.AppendLine("  " + line);
+                }
+
+                if (mismatchLines.Count > maxShown)
+                {
+                    sb.AppendLine($"  ... and {mismatchLines.Count - maxShown} more");
+                }
+
+                if (mismatchIndices.Count > 0)
+                {
+                    sb.AppendLine();
+                    sb.AppendLine("Select these lines in the list view?");
+                    if (MessageBox.Show(this, sb.ToString(), Title, MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
+                    {
+                        SubtitleListview1.SelectNone();
+                        SubtitleListview1.SelectIndexAndEnsureVisible(mismatchIndices[0], true);
+                        foreach (var index in mismatchIndices)
+                        {
+                            if (index >= 0 && index < SubtitleListview1.Items.Count)
+                            {
+                                SubtitleListview1.Items[index].Selected = true;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    MessageBox.Show(this, sb.ToString(), Title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
+        }
+
+        private static int MoveSpeakerTagsToActor(IEnumerable<Paragraph> paragraphs, string header, IDictionary<string, int> unmatchedTags)
+        {
+            var styles = AdvancedSubStationAlpha.GetStylesFromHeader(header);
+            var count = 0;
+            foreach (var p in paragraphs)
+            {
+                var match = SpeakerTagRegex.Match(p.Text);
+                if (!match.Success)
+                {
+                    continue;
+                }
+
+                var tag = match.Groups[1].Value.Trim();
+                if (tag.Length == 0)
+                {
+                    continue;
+                }
+
+                p.Actor = tag;
+                var style = styles.Find(s => string.Equals(s, tag, StringComparison.OrdinalIgnoreCase));
+                if (style != null)
+                {
+                    p.Extra = style; // header casing, so the ASSA writer's case-sensitive match succeeds
+                }
+                else
+                {
+                    unmatchedTags.TryGetValue(tag, out var n);
+                    unmatchedTags[tag] = n + 1;
+                }
+
+                p.Text = p.Text.Remove(match.Index, match.Length).TrimStart();
+                count++;
+            }
+
+            return count;
+        }
+
+        private void CopyActorToSpeakerTagsToolStripMenuItemClick(object sender, EventArgs e)
+        {
+            MakeHistoryForUndo("Copy actor to [tags]");
+
+            var count = CopyActorToSpeakerTags(_subtitle);
+            if (_subtitleOriginal != null && _subtitleOriginal.Paragraphs.Count > 0)
+            {
+                count += CopyActorToSpeakerTags(_subtitleOriginal);
+            }
+
+            if (count == 0)
+            {
+                ShowStatus("No lines with an actor to copy");
+                return;
+            }
+
+            SaveSubtitleListviewIndices();
+            SubtitleListview1.Fill(_subtitle, _subtitleOriginal);
+            RestoreSubtitleListviewIndices();
+            RefreshSelectedParagraph();
+            ShowStatus($"Copied actor to [tags] on {count} lines");
+        }
+
+        private static int CopyActorToSpeakerTags(Subtitle subtitle)
+        {
+            var count = 0;
+            foreach (var p in subtitle.Paragraphs)
+            {
+                if (string.IsNullOrWhiteSpace(p.Actor))
+                {
+                    continue;
+                }
+
+                var tag = "[" + p.Actor.Trim() + "]";
+                if (p.Text.TrimStart().StartsWith(tag, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue; // already tagged with this actor
+                }
+
+                p.Text = tag + " " + p.Text.TrimStart();
+                count++;
+            }
+
+            return count;
+        }
+
         private void SetLayer(object sender, EventArgs e)
         {
             string layer = (sender as ToolStripItem).Text;
@@ -31403,7 +31671,12 @@ namespace Nikse.SubtitleEdit.Forms
             var f = GetCurrentSubtitleFormat();
             styleToolStripMenuItem.Visible = f.HasStyleSupport;
             var formatType = f.GetType();
-            actorToolStripMenuItem.Visible = formatType == typeof(AdvancedSubStationAlpha) || formatType == typeof(SubStationAlpha);
+            var isSubStation = formatType == typeof(AdvancedSubStationAlpha) || formatType == typeof(SubStationAlpha);
+            actorToolStripMenuItem.Visible = isSubStation;
+            moveSpeakerTagsToActorToolStripMenuItem.Visible = isSubStation;
+            copyActorToSpeakerTagsToolStripMenuItem.Visible = isSubStation;
+            toolStripSeparatorSpeakerTags1.Visible = isSubStation;
+            toolStripSeparatorSpeakerTags2.Visible = isSubStation;
 
             convertColorsToDialogToolStripMenuItem.Visible = _subtitle.Paragraphs.Any(p => p.Text.Contains("<font color") || p.Text.Contains("<c."));
         }

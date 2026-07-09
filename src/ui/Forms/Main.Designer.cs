@@ -293,6 +293,10 @@ namespace Nikse.SubtitleEdit.Forms
             this.videoResolutionResamplerToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.generateBackgroundBoxToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.colorPickerToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.toolStripSeparatorSpeakerTags1 = new System.Windows.Forms.ToolStripSeparator();
+            this.toolStripSeparatorSpeakerTags2 = new System.Windows.Forms.ToolStripSeparator();
+            this.moveSpeakerTagsToActorToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.copyActorToSpeakerTagsToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripMenuItemAssStyles = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparatorAssa = new System.Windows.Forms.ToolStripSeparator();
             this.toolStripMenuItemSetRegion = new System.Windows.Forms.ToolStripMenuItem();
@@ -1877,6 +1881,10 @@ namespace Nikse.SubtitleEdit.Forms
             this.removeTextForHearImpairedToolStripMenuItem,
             this.convertColorsToDialogToolStripMenuItem,
             this.toolStripMenuItemConvertActors,
+            this.toolStripSeparatorSpeakerTags1,
+            this.moveSpeakerTagsToActorToolStripMenuItem,
+            this.copyActorToSpeakerTagsToolStripMenuItem,
+            this.toolStripSeparatorSpeakerTags2,
             this.ChangeCasingToolStripMenuItem,
             this.toolStripMenuItemAutoMergeShortLines,
             this.toolStripMenuItemMergeDuplicateText,
@@ -1968,6 +1976,30 @@ namespace Nikse.SubtitleEdit.Forms
             this.toolStripMenuItemConvertActors.Size = new System.Drawing.Size(338, 22);
             this.toolStripMenuItemConvertActors.Text = "Convert actors...";
             this.toolStripMenuItemConvertActors.Click += new System.EventHandler(this.toolStripMenuItemConvertActors_Click);
+            // 
+            // toolStripSeparatorSpeakerTags1
+            // 
+            this.toolStripSeparatorSpeakerTags1.Name = "toolStripSeparatorSpeakerTags1";
+            this.toolStripSeparatorSpeakerTags1.Size = new System.Drawing.Size(335, 6);
+            // 
+            // moveSpeakerTagsToActorToolStripMenuItem
+            // 
+            this.moveSpeakerTagsToActorToolStripMenuItem.Name = "moveSpeakerTagsToActorToolStripMenuItem";
+            this.moveSpeakerTagsToActorToolStripMenuItem.Size = new System.Drawing.Size(338, 22);
+            this.moveSpeakerTagsToActorToolStripMenuItem.Text = "Move [tags] to actor/style...";
+            this.moveSpeakerTagsToActorToolStripMenuItem.Click += new System.EventHandler(this.MoveSpeakerTagsToActorToolStripMenuItemClick);
+            // 
+            // copyActorToSpeakerTagsToolStripMenuItem
+            // 
+            this.copyActorToSpeakerTagsToolStripMenuItem.Name = "copyActorToSpeakerTagsToolStripMenuItem";
+            this.copyActorToSpeakerTagsToolStripMenuItem.Size = new System.Drawing.Size(338, 22);
+            this.copyActorToSpeakerTagsToolStripMenuItem.Text = "Copy actor to [tags]";
+            this.copyActorToSpeakerTagsToolStripMenuItem.Click += new System.EventHandler(this.CopyActorToSpeakerTagsToolStripMenuItemClick);
+            // 
+            // toolStripSeparatorSpeakerTags2
+            // 
+            this.toolStripSeparatorSpeakerTags2.Name = "toolStripSeparatorSpeakerTags2";
+            this.toolStripSeparatorSpeakerTags2.Size = new System.Drawing.Size(335, 6);
             // 
             // ChangeCasingToolStripMenuItem
             // 
@@ -6543,6 +6575,10 @@ namespace Nikse.SubtitleEdit.Forms
         private System.Windows.Forms.ToolStripButton toolStripButtonSpellCheck;
         private System.Windows.Forms.ToolStripMenuItem wordListsToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem colorPickerToolStripMenuItem;
+        private System.Windows.Forms.ToolStripSeparator toolStripSeparatorSpeakerTags1;
+        private System.Windows.Forms.ToolStripSeparator toolStripSeparatorSpeakerTags2;
+        private System.Windows.Forms.ToolStripMenuItem moveSpeakerTagsToActorToolStripMenuItem;
+        private System.Windows.Forms.ToolStripMenuItem copyActorToSpeakerTagsToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem convertColorsToDialogToolStripMenuItem;
         private System.Windows.Forms.PictureBox pictureBoxRecord;
         private System.Windows.Forms.ToolStripMenuItem audioToTextWhisperTolStripMenuItem;
