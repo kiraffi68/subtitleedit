@@ -270,6 +270,7 @@ namespace Nikse.SubtitleEdit.Core.Settings
         public string MainListViewColumnTextUp { get; set; }
         public string MainListViewColumnTextDown { get; set; }
         public string MainListViewGoToNextError { get; set; }
+        public string MainListViewApplySpeakerTag { get; set; }
         public string MainListViewListErrors { get; set; }
         public string MainListViewSortByNumber { get; set; }
         public string MainListViewSortByStartTime { get; set; }

@@ -371,6 +371,7 @@ namespace Nikse.SubtitleEdit.Forms
             this.labelNextWord = new System.Windows.Forms.Label();
             this.audioVisualizer = new Nikse.SubtitleEdit.Controls.AudioVisualizer();
             this.checkBoxSyncListViewWithVideoWhilePlaying = new System.Windows.Forms.CheckBox();
+            this.checkBoxPlayLineOnSelect = new System.Windows.Forms.CheckBox();
             this.labelVideoInfo = new System.Windows.Forms.Label();
             this.contextMenuStripVideoFileName = new System.Windows.Forms.ContextMenuStrip(this.components);
             this.videoInfoToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
@@ -486,6 +487,8 @@ namespace Nikse.SubtitleEdit.Forms
             this.imageListBookmarks = new System.Windows.Forms.ImageList(this.components);
             this.groupBoxEdit = new System.Windows.Forms.GroupBox();
             this.numericUpDownLayer = new Nikse.SubtitleEdit.Controls.NikseUpDown();
+            this.comboBoxSpeakerTag = new Nikse.SubtitleEdit.Controls.NikseComboBox();
+            this.buttonApplySpeakerTag = new System.Windows.Forms.Button();
             this.labelLayer = new Nikse.SubtitleEdit.Controls.NikseLabel();
             this.panelBookmark = new System.Windows.Forms.Panel();
             this.labelBookmark = new System.Windows.Forms.Label();
@@ -3363,6 +3366,7 @@ namespace Nikse.SubtitleEdit.Forms
             this.groupBoxVideo.Controls.Add(this.labelNextWord);
             this.groupBoxVideo.Controls.Add(this.audioVisualizer);
             this.groupBoxVideo.Controls.Add(this.checkBoxSyncListViewWithVideoWhilePlaying);
+            this.groupBoxVideo.Controls.Add(this.checkBoxPlayLineOnSelect);
             this.groupBoxVideo.Controls.Add(this.labelVideoInfo);
             this.groupBoxVideo.Controls.Add(this.trackBarWaveformPosition);
             this.groupBoxVideo.Controls.Add(this.panelWaveformControls);
@@ -3450,6 +3454,16 @@ namespace Nikse.SubtitleEdit.Forms
             this.checkBoxSyncListViewWithVideoWhilePlaying.TabIndex = 1;
             this.checkBoxSyncListViewWithVideoWhilePlaying.Text = "Sync listview with movie when playing";
             this.checkBoxSyncListViewWithVideoWhilePlaying.UseVisualStyleBackColor = true;
+            // 
+            // checkBoxPlayLineOnSelect
+            // 
+            this.checkBoxPlayLineOnSelect.AutoSize = true;
+            this.checkBoxPlayLineOnSelect.Location = new System.Drawing.Point(780, 11);
+            this.checkBoxPlayLineOnSelect.Name = "checkBoxPlayLineOnSelect";
+            this.checkBoxPlayLineOnSelect.Size = new System.Drawing.Size(120, 17);
+            this.checkBoxPlayLineOnSelect.TabIndex = 2;
+            this.checkBoxPlayLineOnSelect.Text = "Play line on kb-select";
+            this.checkBoxPlayLineOnSelect.UseVisualStyleBackColor = true;
             // 
             // labelVideoInfo
             // 
@@ -4846,6 +4860,8 @@ namespace Nikse.SubtitleEdit.Forms
             // groupBoxEdit
             // 
             this.groupBoxEdit.Controls.Add(this.numericUpDownLayer);
+            this.groupBoxEdit.Controls.Add(this.comboBoxSpeakerTag);
+            this.groupBoxEdit.Controls.Add(this.buttonApplySpeakerTag);
             this.groupBoxEdit.Controls.Add(this.labelLayer);
             this.groupBoxEdit.Controls.Add(this.panelBookmark);
             this.groupBoxEdit.Controls.Add(this.textBoxListViewText);
@@ -4919,6 +4935,42 @@ namespace Nikse.SubtitleEdit.Forms
             0,
             0});
             this.numericUpDownLayer.ValueChanged += new System.EventHandler(this.NumericUpDownLayer_ValueChanged);
+            // 
+            // comboBoxSpeakerTag
+            // 
+            this.comboBoxSpeakerTag.BackColor = System.Drawing.SystemColors.Window;
+            this.comboBoxSpeakerTag.BackColorDisabled = System.Drawing.Color.FromArgb(((int)(((byte)(240)))), ((int)(((byte)(240)))), ((int)(((byte)(240)))));
+            this.comboBoxSpeakerTag.BorderColor = System.Drawing.Color.FromArgb(((int)(((byte)(171)))), ((int)(((byte)(173)))), ((int)(((byte)(179)))));
+            this.comboBoxSpeakerTag.BorderColorDisabled = System.Drawing.Color.FromArgb(((int)(((byte)(120)))), ((int)(((byte)(120)))), ((int)(((byte)(120)))));
+            this.comboBoxSpeakerTag.ButtonForeColor = System.Drawing.SystemColors.ControlText;
+            this.comboBoxSpeakerTag.ButtonForeColorDown = System.Drawing.Color.Orange;
+            this.comboBoxSpeakerTag.ButtonForeColorOver = System.Drawing.Color.FromArgb(((int)(((byte)(0)))), ((int)(((byte)(120)))), ((int)(((byte)(215)))));
+            this.comboBoxSpeakerTag.DropDownHeight = 400;
+            this.comboBoxSpeakerTag.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.comboBoxSpeakerTag.DropDownWidth = 130;
+            this.comboBoxSpeakerTag.FormattingEnabled = false;
+            this.comboBoxSpeakerTag.Location = new System.Drawing.Point(150, 113);
+            this.comboBoxSpeakerTag.MaxLength = 32767;
+            this.comboBoxSpeakerTag.Name = "comboBoxSpeakerTag";
+            this.comboBoxSpeakerTag.SelectedIndex = -1;
+            this.comboBoxSpeakerTag.SelectedItem = null;
+            this.comboBoxSpeakerTag.SelectedText = "";
+            this.comboBoxSpeakerTag.Size = new System.Drawing.Size(110, 23);
+            this.comboBoxSpeakerTag.TabIndex = 12;
+            this.comboBoxSpeakerTag.UsePopupWindow = false;
+            this.comboBoxSpeakerTag.Visible = false;
+            this.comboBoxSpeakerTag.DropDown += new System.EventHandler(this.ComboBoxSpeakerTagDropDown);
+            // 
+            // buttonApplySpeakerTag
+            // 
+            this.buttonApplySpeakerTag.Location = new System.Drawing.Point(160, 77);
+            this.buttonApplySpeakerTag.Name = "buttonApplySpeakerTag";
+            this.buttonApplySpeakerTag.Size = new System.Drawing.Size(22, 23);
+            this.buttonApplySpeakerTag.TabIndex = 13;
+            this.buttonApplySpeakerTag.Text = "+";
+            this.buttonApplySpeakerTag.UseVisualStyleBackColor = true;
+            this.buttonApplySpeakerTag.Visible = false;
+            this.buttonApplySpeakerTag.Click += new System.EventHandler(this.ButtonApplySpeakerTagClick);
             // 
             // labelLayer
             // 
@@ -6240,6 +6292,7 @@ namespace Nikse.SubtitleEdit.Forms
         private Nikse.SubtitleEdit.Controls.NikseUpDown numericUpDownSecAdjust2;
         private System.Windows.Forms.Button buttonAdjustSecBack2;
         private System.Windows.Forms.CheckBox checkBoxSyncListViewWithVideoWhilePlaying;
+        private System.Windows.Forms.CheckBox checkBoxPlayLineOnSelect;
         private System.Windows.Forms.Label labelAdjustF10;
         private System.Windows.Forms.Label labelAdjustF9;
         private System.Windows.Forms.Label labelAdjustF11;
@@ -6589,6 +6642,8 @@ namespace Nikse.SubtitleEdit.Forms
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator4Extend;
         private System.Windows.Forms.ToolStripMenuItem toolStripMenuItemSetLayer;
         private Nikse.SubtitleEdit.Controls.NikseUpDown numericUpDownLayer;
+        private Nikse.SubtitleEdit.Controls.NikseComboBox comboBoxSpeakerTag;
+        private System.Windows.Forms.Button buttonApplySpeakerTag;
         private Nikse.SubtitleEdit.Controls.NikseLabel labelLayer;
         private System.Windows.Forms.ToolStripMenuItem toolStripMenuItemWebVttStyle;
         private System.Windows.Forms.ToolStripMenuItem beautifyTimeCodesOfSelectedLinesToolStripMenuItem;

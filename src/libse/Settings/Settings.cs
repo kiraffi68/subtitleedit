@@ -1063,6 +1063,12 @@ namespace Nikse.SubtitleEdit.Core.Settings
                 settings.General.AutoRepeatCount = Convert.ToInt32(subNode.InnerText, CultureInfo.InvariantCulture);
             }
 
+            subNode = node.SelectSingleNode("PlayLineOnSelect");
+            if (subNode != null)
+            {
+                settings.General.PlayLineOnSelect = Convert.ToBoolean(subNode.InnerText, CultureInfo.InvariantCulture);
+            }
+
             subNode = node.SelectSingleNode("SyncListViewWithVideoWhilePlaying");
             if (subNode != null)
             {
@@ -7921,6 +7927,12 @@ namespace Nikse.SubtitleEdit.Core.Settings
                     shortcuts.MainListViewColumnTextDown = subNode.InnerText;
                 }
 
+                subNode = node.SelectSingleNode("MainListViewApplySpeakerTag");
+                if (subNode != null)
+                {
+                    shortcuts.MainListViewApplySpeakerTag = subNode.InnerText;
+                }
+
                 subNode = node.SelectSingleNode("MainListViewGoToNextError");
                 if (subNode != null)
                 {
@@ -9059,6 +9071,7 @@ namespace Nikse.SubtitleEdit.Core.Settings
                 xmlWriter.WriteElementString("AutoContinueDelay", settings.General.AutoContinueDelay.ToString(CultureInfo.InvariantCulture));
                 xmlWriter.WriteElementString("ReturnToStartAfterRepeat", settings.General.ReturnToStartAfterRepeat.ToString(CultureInfo.InvariantCulture));
                 xmlWriter.WriteElementString("SyncListViewWithVideoWhilePlaying", settings.General.SyncListViewWithVideoWhilePlaying.ToString(CultureInfo.InvariantCulture));
+                xmlWriter.WriteElementString("PlayLineOnSelect", settings.General.PlayLineOnSelect.ToString(CultureInfo.InvariantCulture));
                 xmlWriter.WriteElementString("AutoBackupSeconds", settings.General.AutoBackupSeconds.ToString(CultureInfo.InvariantCulture));
                 xmlWriter.WriteElementString("AutoBackupDeleteAfterMonths", settings.General.AutoBackupDeleteAfterMonths.ToString(CultureInfo.InvariantCulture));
                 xmlWriter.WriteElementString("SpellChecker", settings.General.SpellChecker);
@@ -10409,6 +10422,7 @@ namespace Nikse.SubtitleEdit.Core.Settings
             textWriter.WriteElementString("MainListViewColumnTextUp", shortcuts.MainListViewColumnTextUp);
             textWriter.WriteElementString("MainListViewColumnTextDown", shortcuts.MainListViewColumnTextDown);
             textWriter.WriteElementString("MainListViewGoToNextError", shortcuts.MainListViewGoToNextError);
+            textWriter.WriteElementString("MainListViewApplySpeakerTag", shortcuts.MainListViewApplySpeakerTag);
             textWriter.WriteElementString("MainListViewListErrors", shortcuts.MainListViewListErrors);
             textWriter.WriteElementString("MainListViewSortByNumber", shortcuts.MainListViewSortByNumber);
             textWriter.WriteElementString("MainListViewSortByStartTime", shortcuts.MainListViewSortByStartTime);

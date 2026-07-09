@@ -1825,6 +1825,7 @@ namespace Nikse.SubtitleEdit.Forms.Options
             AddNode(listViewNode, language.ListViewColumnTextUp, nameof(Configuration.Settings.Shortcuts.MainListViewColumnTextUp), true);
             AddNode(listViewNode, language.ListViewColumnTextDown, nameof(Configuration.Settings.Shortcuts.MainListViewColumnTextDown), true);
             AddNode(listViewNode, language.ListViewGoToNextError, nameof(Configuration.Settings.Shortcuts.MainListViewGoToNextError));
+            AddNode(listViewNode, "Apply speaker tag from dropdown (text + original)", nameof(Configuration.Settings.Shortcuts.MainListViewApplySpeakerTag));
             AddNode(listViewNode, language.ListViewListErrors, nameof(Configuration.Settings.Shortcuts.MainListViewListErrors), true);
             AddNode(listViewNode, string.Format(language.ListViewListSortByX, LanguageSettings.Current.General.Number), nameof(Configuration.Settings.Shortcuts.MainListViewSortByNumber), true);
             AddNode(listViewNode, string.Format(language.ListViewListSortByX, LanguageSettings.Current.General.StartTime), nameof(Configuration.Settings.Shortcuts.MainListViewSortByStartTime), true);

@@ -251,6 +251,7 @@ namespace Nikse.SubtitleEdit.Logic
         public Keys MainListViewSetActor9 { get; set; }
         public Keys MainListViewSetActor10 { get; set; }
         public Keys MainListViewGoToNextError { get; set; }
+        public Keys MainListViewApplySpeakerTag { get; set; }
         public Keys MainListViewRemoveBlankLines { get; set; }
         public Keys MainListViewRemoveTimeCodes { get; set; }
         public Keys MainListViewCopyText { get; set; }
@@ -449,6 +450,7 @@ namespace Nikse.SubtitleEdit.Logic
             MainListViewSetActor9 = UiUtil.GetKeys(Configuration.Settings.Shortcuts.MainListViewSetActor9);
             MainListViewSetActor10 = UiUtil.GetKeys(Configuration.Settings.Shortcuts.MainListViewSetActor10);
             MainListViewGoToNextError = UiUtil.GetKeys(Configuration.Settings.Shortcuts.MainListViewGoToNextError);
+            MainListViewApplySpeakerTag = UiUtil.GetKeys(Configuration.Settings.Shortcuts.MainListViewApplySpeakerTag);
             MainListViewRemoveBlankLines = UiUtil.GetKeys(Configuration.Settings.Shortcuts.GeneralRemoveBlankLines);
             MainListViewRemoveTimeCodes = UiUtil.GetKeys(Configuration.Settings.Shortcuts.MainListViewRemoveTimeCodes);
             MainEditFixRTLViaUnicodeChars = UiUtil.GetKeys(Configuration.Settings.Shortcuts.MainEditFixRTLViaUnicodeChars);

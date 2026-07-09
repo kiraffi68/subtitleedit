@@ -132,6 +132,7 @@ namespace Nikse.SubtitleEdit.Core.Settings
         public int AutoContinueDelay { get; set; }
         public bool ReturnToStartAfterRepeat { get; set; }
         public bool SyncListViewWithVideoWhilePlaying { get; set; }
+        public bool PlayLineOnSelect { get; set; }
         public int AutoBackupSeconds { get; set; }
         public int AutoBackupDeleteAfterMonths { get; set; }
         public string SpellChecker { get; set; }

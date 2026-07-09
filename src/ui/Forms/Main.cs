@@ -413,6 +413,7 @@ namespace Nikse.SubtitleEdit.Forms
                 comboBoxAutoRepeat.SelectedIndex = Configuration.Settings.General.AutoRepeatCount;
                 checkBoxAutoContinue.Checked = Configuration.Settings.General.AutoContinueOn;
                 checkBoxSyncListViewWithVideoWhilePlaying.Checked = Configuration.Settings.General.SyncListViewWithVideoWhilePlaying;
+                checkBoxPlayLineOnSelect.Checked = Configuration.Settings.General.PlayLineOnSelect;
 
                 SetFormatTo(Configuration.Settings.General.DefaultSubtitleFormat);
 
@@ -2074,6 +2075,7 @@ namespace Nikse.SubtitleEdit.Forms
             tabPageCreate.Text = _language.VideoControls.Create;
             tabPageAdjust.Text = _language.VideoControls.Adjust;
             checkBoxSyncListViewWithVideoWhilePlaying.Text = _language.VideoControls.SelectCurrentElementWhilePlaying;
+            checkBoxPlayLineOnSelect.Left = checkBoxSyncListViewWithVideoWhilePlaying.Right + 24;
             if (_videoFileName == null)
             {
                 labelVideoInfo.Text = _languageGeneral.NoVideoLoaded;
@@ -10501,6 +10503,100 @@ namespace Nikse.SubtitleEdit.Forms
             return count;
         }
 
+        private string _speakerTagComboHeader;
+
+        private void PopulateSpeakerTagCombo()
+        {
+            var armed = comboBoxSpeakerTag.SelectedItem?.ToString();
+            comboBoxSpeakerTag.Items.Clear();
+            var armedIndex = -1;
+            if (_subtitle != null)
+            {
+                foreach (var style in AdvancedSubStationAlpha.GetStylesFromHeader(_subtitle.Header))
+                {
+                    var i = comboBoxSpeakerTag.Items.Add(style);
+                    if (armed != null && string.Equals(style, armed, StringComparison.Ordinal))
+                    {
+                        armedIndex = i;
+                    }
+                }
+
+                _speakerTagComboHeader = _subtitle.Header;
+            }
+
+            comboBoxSpeakerTag.SelectedIndex = -1;
+            if (armedIndex >= 0)
+            {
+                comboBoxSpeakerTag.SelectedIndex = armedIndex;
+            }
+        }
+
+        private void ComboBoxSpeakerTagDropDown(object sender, EventArgs e)
+        {
+            // Items added here would only show on the NEXT open (the popup list is
+            // built before this event fires), so this is just a safety net for header
+            // changes; the real population happens in InitializeListViewEditBox.
+            if (!ReferenceEquals(_speakerTagComboHeader, _subtitle?.Header))
+            {
+                PopulateSpeakerTagCombo();
+            }
+        }
+
+        private bool _playLineOnSelectArmed;
+
+        private void ArmPlayLineOnSelect(Action move)
+        {
+            _playLineOnSelectArmed = true;
+            try
+            {
+                move();
+            }
+            finally
+            {
+                _playLineOnSelectArmed = false;
+            }
+        }
+
+        private void ButtonApplySpeakerTagClick(object sender, EventArgs e)
+        {
+            var tag = comboBoxSpeakerTag.SelectedItem?.ToString();
+            if (string.IsNullOrWhiteSpace(tag) || _subtitle == null || SubtitleListview1.SelectedIndices.Count == 0)
+            {
+                return;
+            }
+
+            MakeHistoryForUndo($"Set speaker tag [{tag}]");
+            var hasOriginal = _subtitleOriginal != null && _subtitleOriginal.Paragraphs.Count > 0;
+            var count = 0;
+            foreach (int index in SubtitleListview1.SelectedIndices)
+            {
+                var p = _subtitle.Paragraphs[index];
+                p.Text = SetLeadingSpeakerTag(p.Text, tag);
+                SubtitleListview1.SetTimeAndText(index, p, _subtitle.GetParagraphOrDefault(index + 1));
+                if (hasOriginal)
+                {
+                    var original = Utilities.GetOriginalParagraph(index, p, _subtitleOriginal.Paragraphs);
+                    if (original != null)
+                    {
+                        original.Text = SetLeadingSpeakerTag(original.Text, tag);
+                        SubtitleListview1.SetOriginalText(index, original.Text);
+                    }
+                }
+
+                count++;
+            }
+
+            RefreshSelectedParagraph();
+            ShowStatus($"Tagged {count} line{(count == 1 ? string.Empty : "s")} with [{tag}]");
+        }
+
+        private static string SetLeadingSpeakerTag(string text, string tag)
+        {
+            var match = SpeakerTagRegex.Match(text);
+            var body = match.Success ? text.Remove(match.Index, match.Length) : text;
+            return ("[" + tag + "] " + body.TrimStart()).TrimEnd();
+        }
+
         private void SetLayer(object sender, EventArgs e)
         {
             string layer = (sender as ToolStripItem).Text;
@@ -11443,6 +11539,16 @@ namespace Nikse.SubtitleEdit.Forms
 
             _listViewTextUndoIndex = -1;
             SubtitleListView1SelectedIndexChange();
+
+            if (_playLineOnSelectArmed && checkBoxPlayLineOnSelect.Checked && mediaPlayer.VideoPlayer != null &&
+                SubtitleListview1.SelectedIndices.Count == 1 &&
+                _subtitleListViewIndex >= 0 && _subtitleListViewIndex < _subtitle.Paragraphs.Count &&
+                (mediaPlayer.IsPaused || !checkBoxSyncListViewWithVideoWhilePlaying.Checked))
+            {
+                ReadyAutoRepeat();
+                PlayPart(_subtitle.Paragraphs[_subtitleListViewIndex]);
+            }
+
             if (_findHelper != null && !_findHelper.InProgress)
             {
                 _findHelper.StartLineIndex = _subtitleListViewIndex;
@@ -14074,6 +14180,8 @@ namespace Nikse.SubtitleEdit.Forms
             bool isAssa = format.GetType() == typeof(AdvancedSubStationAlpha);
             numericUpDownLayer.Visible = isAssa;
             labelLayer.Visible = isAssa;
+            comboBoxSpeakerTag.Visible = isAssa;
+            buttonApplySpeakerTag.Visible = isAssa;
             if (isAssa)
             {
                 labelLayer.Text = LanguageSettings.Current.General.Layer;
@@ -14081,6 +14189,14 @@ namespace Nikse.SubtitleEdit.Forms
                 numericUpDownLayer.ValueChanged -= NumericUpDownLayer_ValueChanged;
                 numericUpDownLayer.Value = p.Layer;
                 numericUpDownLayer.ValueChanged += NumericUpDownLayer_ValueChanged;
+
+                comboBoxSpeakerTag.Top = numericUpDownLayer.Top;
+                comboBoxSpeakerTag.Left = numericUpDownLayer.Right + 9;
+                comboBoxSpeakerTag.Width = Math.Max(55, Math.Min(130, textBoxListViewText.Left - comboBoxSpeakerTag.Left - 9));
+                if (!ReferenceEquals(_speakerTagComboHeader, _subtitle.Header))
+                {
+                    PopulateSpeakerTagCombo();
+                }
             }
 
             timeUpDownStartTime.MaskedTextBox.TextChanged -= MaskedTextBoxTextChanged;
@@ -14246,6 +14362,7 @@ namespace Nikse.SubtitleEdit.Forms
             Configuration.Settings.General.AutoContinueOn = checkBoxAutoContinue.Checked;
             Configuration.Settings.General.AutoContinueDelay = comboBoxAutoContinue.SelectedIndex;
             Configuration.Settings.General.SyncListViewWithVideoWhilePlaying = checkBoxSyncListViewWithVideoWhilePlaying.Checked;
+            Configuration.Settings.General.PlayLineOnSelect = checkBoxPlayLineOnSelect.Checked;
             Configuration.Settings.General.ShowWaveform = audioVisualizer.ShowWaveform;
             Configuration.Settings.General.ShowSpectrogram = audioVisualizer.ShowSpectrogram;
             Configuration.Settings.General.LayoutNumber = _layout;
@@ -17689,19 +17806,19 @@ namespace Nikse.SubtitleEdit.Forms
             }
             else if (_shortcuts.MainGeneralGoToNextSubtitle == e.KeyData)
             {
-                MoveNextPrevious(0);
+                ArmPlayLineOnSelect(() => MoveNextPrevious(0));
                 e.SuppressKeyPress = true;
             }
             else if (_shortcuts.MainGeneralGoToNextSubtitleCursorAtEnd == e.KeyData)
             {
-                MoveNextPrevious(0);
+                ArmPlayLineOnSelect(() => MoveNextPrevious(0));
                 textBoxListViewText.SelectionStart = textBoxListViewText.Text.Length;
                 textBoxListViewText.SelectionLength = 0;
                 e.SuppressKeyPress = true;
             }
             else if (_shortcuts.MainGeneralGoToPrevSubtitle == e.KeyData)
             {
-                ButtonPreviousClick(null, null);
+                ArmPlayLineOnSelect(() => ButtonPreviousClick(null, null));
                 e.SuppressKeyPress = true;
             }
             else if (_shortcuts.MainGeneralGoToStartOfCurrentSubtitle == e.KeyData)
@@ -18947,12 +19064,12 @@ namespace Nikse.SubtitleEdit.Forms
             }
             else if (e.KeyData == _shortcuts.VideoGoToPrevSubtitle)
             {
-                GoToPreviousSubtitle(mediaPlayer.CurrentPosition * TimeCode.BaseUnit);
+                ArmPlayLineOnSelect(() => GoToPreviousSubtitle(mediaPlayer.CurrentPosition * TimeCode.BaseUnit));
                 e.SuppressKeyPress = true;
             }
             else if (e.KeyData == _shortcuts.VideoGoToNextSubtitle)
             {
-                GoToNextSubtitle(mediaPlayer.CurrentPosition * TimeCode.BaseUnit);
+                ArmPlayLineOnSelect(() => GoToNextSubtitle(mediaPlayer.CurrentPosition * TimeCode.BaseUnit));
                 e.SuppressKeyPress = true;
             }
             else if (e.KeyData == _shortcuts.VideoGoToPrevTimeCode)
@@ -22222,6 +22339,11 @@ namespace Nikse.SubtitleEdit.Forms
             else if (e.KeyData == _shortcuts.MainListViewGoToNextError)
             {
                 GoToNextSyntaxError();
+                e.SuppressKeyPress = true;
+            }
+            else if (e.KeyData == _shortcuts.MainListViewApplySpeakerTag && comboBoxSpeakerTag.Visible)
+            {
+                ButtonApplySpeakerTagClick(null, null);
                 e.SuppressKeyPress = true;
             }
             else if (e.KeyData == _shortcuts.MainListViewRemoveTimeCodes)
