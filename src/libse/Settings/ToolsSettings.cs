@@ -399,6 +399,8 @@ namespace Nikse.SubtitleEdit.Core.Settings
         public string AssaBgBoxDrawing { get; set; }
         public bool AssaBgBoxDrawingFileWatch { get; set; }
         public bool AssaBgBoxDrawingOnly { get; set; }
+        public bool AssaBgBoxPerStyleColor { get; set; }
+        public bool AssaBgBoxPinPosition { get; set; }
 
 
         public string GenVideoFontName { get; set; }

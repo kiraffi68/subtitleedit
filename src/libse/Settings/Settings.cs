@@ -4136,6 +4136,18 @@ namespace Nikse.SubtitleEdit.Core.Settings
                 settings.Tools.AssaBgBoxDrawingOnly = Convert.ToBoolean(subNode.InnerText, CultureInfo.InvariantCulture);
             }
 
+            subNode = node.SelectSingleNode("AssaBgBoxPerStyleColor");
+            if (subNode != null)
+            {
+                settings.Tools.AssaBgBoxPerStyleColor = Convert.ToBoolean(subNode.InnerText, CultureInfo.InvariantCulture);
+            }
+
+            subNode = node.SelectSingleNode("AssaBgBoxPinPosition");
+            if (subNode != null)
+            {
+                settings.Tools.AssaBgBoxPinPosition = Convert.ToBoolean(subNode.InnerText, CultureInfo.InvariantCulture);
+            }
+
             subNode = node.SelectSingleNode("AssaBgBoxDrawing");
             if (subNode != null)
             {
@@ -9593,6 +9605,8 @@ namespace Nikse.SubtitleEdit.Core.Settings
                 xmlWriter.WriteElementString("AssaBgBoxLayer", settings.Tools.AssaBgBoxLayer.ToString(CultureInfo.InvariantCulture));
                 xmlWriter.WriteElementString("AssaBgBoxDrawingFileWatch", settings.Tools.AssaBgBoxDrawingFileWatch.ToString(CultureInfo.InvariantCulture));
                 xmlWriter.WriteElementString("AssaBgBoxDrawingOnly", settings.Tools.AssaBgBoxDrawingOnly.ToString(CultureInfo.InvariantCulture));
+                xmlWriter.WriteElementString("AssaBgBoxPerStyleColor", settings.Tools.AssaBgBoxPerStyleColor.ToString(CultureInfo.InvariantCulture));
+                xmlWriter.WriteElementString("AssaBgBoxPinPosition", settings.Tools.AssaBgBoxPinPosition.ToString(CultureInfo.InvariantCulture));
                 xmlWriter.WriteElementString("AssaBgBoxDrawing", settings.Tools.AssaBgBoxDrawing);
                 xmlWriter.WriteElementString("GenVideoFontName", settings.Tools.GenVideoFontName);
                 xmlWriter.WriteElementString("GenVideoFontBold", settings.Tools.GenVideoFontBold.ToString(CultureInfo.InvariantCulture));

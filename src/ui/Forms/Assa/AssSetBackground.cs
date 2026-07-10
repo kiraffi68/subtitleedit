@@ -56,6 +56,8 @@ namespace Nikse.SubtitleEdit.Forms.Assa
         private Color _boxColor;
         private Color _boxShadowColor;
         private Color _boxOutlineColor;
+        private CheckBox _checkBoxPerStyleColor;
+        private CheckBox _checkBoxPinPosition;
         private long _totalFrames;
         private FileSystemWatcher _drawingFileWatcher;
         private readonly Subtitle _wholeSubtitle;
@@ -227,6 +229,34 @@ namespace Nikse.SubtitleEdit.Forms.Assa
                 _boxStyleName = $"SE-box-bg{_random.Next(1234)}";
                 tryCount++;
             }
+
+            _checkBoxPerStyleColor = new CheckBox
+            {
+                AutoSize = true,
+                Text = "Use style shadow color (per line)",
+                Location = new Point(buttonPickColor.Right + 12, buttonPickColor.Top - 2),
+                Checked = Configuration.Settings.Tools.AssaBgBoxPerStyleColor,
+                Enabled = !checkBoxOnlyDrawing.Checked,
+            };
+            Controls.Add(_checkBoxPerStyleColor);
+            _checkBoxPerStyleColor.BringToFront();
+            _checkBoxPerStyleColor.CheckedChanged += (s, ev) =>
+            {
+                buttonPrimaryColor.Enabled = !_checkBoxPerStyleColor.Checked && !checkBoxOnlyDrawing.Checked;
+                _updatePreview = true;
+            };
+            buttonPrimaryColor.Enabled = !_checkBoxPerStyleColor.Checked && !checkBoxOnlyDrawing.Checked;
+
+            _checkBoxPinPosition = new CheckBox
+            {
+                AutoSize = true,
+                Text = "Pin text positions (no stacking jumps)",
+                Location = new Point(buttonPickColor.Right + 12, buttonPickColor.Top + 18),
+                Checked = Configuration.Settings.Tools.AssaBgBoxPinPosition,
+            };
+            Controls.Add(_checkBoxPinPosition);
+            _checkBoxPinPosition.BringToFront();
+            _checkBoxPinPosition.CheckedChanged += (s, ev) => { _updatePreview = true; };
         }
 
         private static void SafeNumericUpDownAssign(NikseUpDown numericUpDown, int value)
@@ -309,7 +339,12 @@ namespace Nikse.SubtitleEdit.Forms.Assa
                     continue;
                 }
 
-                var p2 = new Paragraph(_assaBox ?? string.Empty, p.StartTime.TotalMilliseconds, p.EndTime.TotalMilliseconds)
+                if (_checkBoxPinPosition != null && _checkBoxPinPosition.Checked)
+                {
+                    p.Text = GetPinTag(p, posAndSize) + p.Text;
+                }
+
+                var p2 = new Paragraph(GetPerStyleColorOverride(p) + "{\\an7\\pos(0,0)}" + (_assaBox ?? string.Empty), p.StartTime.TotalMilliseconds, p.EndTime.TotalMilliseconds)
                 {
                     Layer = GetLayer(),
                     Extra = _boxStyleName,
@@ -490,7 +525,13 @@ namespace Nikse.SubtitleEdit.Forms.Assa
             p.Text = Regex.Replace(p.Text, @"\\fade\([\d\.,]*\)", string.Empty);
 
             p.Text = styleToApply + p.Text;
-            subtitle.Paragraphs.Add(p);
+            var pPreview = p;
+            if (_checkBoxPinPosition != null && _checkBoxPinPosition.Checked)
+            {
+                pPreview = new Paragraph(p);
+                pPreview.Text = GetPinTag(p, new PositionAndSize { Left = _left, Top = _top, Right = _right, Bottom = _bottom }) + pPreview.Text;
+            }
+            subtitle.Paragraphs.Add(pPreview);
 
             // build box + gen preview via mpv
             var x = _left - (int)numericUpDownPaddingLeft.Value;
@@ -510,7 +551,7 @@ namespace Nikse.SubtitleEdit.Forms.Assa
                 Right = right,
             });
 
-            var p2 = new Paragraph(_assaBox ?? string.Empty, 0, 1000)
+            var p2 = new Paragraph(GetPerStyleColorOverride(p) + "{\\an7\\pos(0,0)}" + (_assaBox ?? string.Empty), 0, 1000)
             {
                 StartTime = { TotalMilliseconds = p.StartTime.TotalMilliseconds },
                 EndTime = { TotalMilliseconds = p.EndTime.TotalMilliseconds },
@@ -723,6 +764,8 @@ namespace Nikse.SubtitleEdit.Forms.Assa
             Configuration.Settings.Tools.AssaBgBoxDrawingMarginV = (int)numericUpDownDrawingMarginV.Value;
             Configuration.Settings.Tools.AssaBgBoxDrawingMarginH = (int)numericUpDownDrawingMarginH.Value;
             Configuration.Settings.Tools.AssaBgBoxDrawingOnly = checkBoxOnlyDrawing.Checked;
+            Configuration.Settings.Tools.AssaBgBoxPerStyleColor = _checkBoxPerStyleColor.Checked;
+            Configuration.Settings.Tools.AssaBgBoxPinPosition = _checkBoxPinPosition.Checked;
 
             if (radioButtonBottomLeft.Checked)
             {
@@ -812,6 +855,118 @@ namespace Nikse.SubtitleEdit.Forms.Assa
             VideoLoaded(null, null);
         }
 
+        private static string RemoveFadeTags(string input)
+        {
+            var text = Regex.Replace(input, @"{\\fad\([\d\.,]*\)}", string.Empty);
+            text = Regex.Replace(text, @"\\fad\([\d\.,]*\)", string.Empty);
+            text = Regex.Replace(text, @"{\\fade\([\d\.,]*\)}", string.Empty);
+            text = Regex.Replace(text, @"\\fade\([\d\.,]*\)", string.Empty);
+            return text;
+        }
+
+        /// <summary>
+        /// Adds the target line to the measurement subtitle together with fully transparent copies of
+        /// all other lines visible at the target's temporal midpoint. Transparent lines still occupy
+        /// layout space, so libass applies the same collision stacking as in the real file, while only
+        /// the target contributes visible pixels to the bounding-box scan.
+        /// </summary>
+        private void AddMeasureParagraphsWithCompanions(Subtitle sub, Paragraph target, double startMs, double endMs)
+        {
+            var sampleMs = target.StartTime.TotalMilliseconds + target.DurationTotalMilliseconds / 2.0;
+            var pin = _checkBoxPinPosition != null && _checkBoxPinPosition.Checked;
+            foreach (var q in _subtitleWithNewHeader.Paragraphs)
+            {
+                var isTarget = q == target;
+                if (!isTarget)
+                {
+                    // when pinning, measure against every line that overlaps the target anywhere in its
+                    // duration; otherwise only against lines visible at the target's temporal midpoint
+                    var relevant = pin
+                        ? q.StartTime.TotalMilliseconds < target.EndTime.TotalMilliseconds &&
+                          q.EndTime.TotalMilliseconds > target.StartTime.TotalMilliseconds
+                        : q.StartTime.TotalMilliseconds <= sampleMs &&
+                          q.EndTime.TotalMilliseconds > sampleMs;
+                    if (q.IsComment || !relevant)
+                    {
+                        continue;
+                    }
+                }
+
+                var text = RemoveFadeTags(q.Text);
+                if (!isTarget)
+                {
+                    if (text.Contains("\\p1") || text.Contains("\\p2") || text.Contains("\\p4"))
+                    {
+                        continue; // drawings (e.g. previously generated boxes) don't collide with text
+                    }
+
+                    // invisible, but still occupies layout space for collision detection
+                    text = "{\\alpha&HFF&}" + text.Replace("\\r", "\\r\\alpha&HFF&");
+                }
+
+                sub.Paragraphs.Add(new Paragraph(text, startMs, endMs)
+                {
+                    Extra = q.Extra,
+                    Style = q.Style,
+                    Layer = q.Layer,
+                    MarginL = q.MarginL,
+                    MarginR = q.MarginR,
+                    MarginV = q.MarginV,
+                });
+            }
+        }
+
+        /// <summary>
+        /// Builds an {\anX\pos(x,y)} tag that pins a text line at its measured position, so libass
+        /// collision reflow can no longer move it mid-line away from its generated box. Lines that
+        /// already carry their own positioning/alignment tags are left untouched.
+        /// </summary>
+        private string GetPinTag(Paragraph textParagraph, PositionAndSize s)
+        {
+            var text = textParagraph.Text ?? string.Empty;
+            if (text.Contains("\\pos(") || text.Contains("\\move(") || text.Contains("\\an") || text.Contains("\\a("))
+            {
+                return string.Empty; // manually positioned/aligned - leave alone
+            }
+
+            var styleName = !string.IsNullOrEmpty(textParagraph.Extra) ? textParagraph.Extra : textParagraph.Style;
+            var style = AdvancedSubStationAlpha.GetSsaStyle(styleName, _subtitleWithNewHeader.Header);
+            if (!int.TryParse(style.Alignment, out var an) || an < 1 || an > 9)
+            {
+                an = 2;
+            }
+
+            double x;
+            switch ((an - 1) % 3)
+            {
+                case 0:
+                    x = s.Left;
+                    break;
+                case 1:
+                    x = (s.Left + s.Right) / 2.0;
+                    break;
+                default:
+                    x = s.Right;
+                    break;
+            }
+
+            double y;
+            if (an >= 7)
+            {
+                y = s.Top;
+            }
+            else if (an >= 4)
+            {
+                y = (s.Top + s.Bottom) / 2.0;
+            }
+            else
+            {
+                y = s.Bottom;
+            }
+
+            return $"{{\\an{an}\\pos({(int)Math.Round(x, MidpointRounding.AwayFromZero)},{(int)Math.Round(y, MidpointRounding.AwayFromZero)})}}";
+        }
+
         private void CalcPositionAndSize()
         {
             try
@@ -840,7 +995,23 @@ namespace Nikse.SubtitleEdit.Forms.Assa
                 var assaTempFileName = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".ass");
                 var sub = new Subtitle();
                 sub.Header = _subtitleWithNewHeader.Header;
-                sub.Paragraphs.Add(new Paragraph(GetPreviewParagraph()));
+                var previewOriginal = _subtitleWithNewHeader.Paragraphs.FirstOrDefault(l => !l.IsComment &&
+                                                                                            _videoPositionSeconds >= l.StartTime.TotalSeconds &&
+                                                                                            _videoPositionSeconds < l.EndTime.TotalSeconds &&
+                                                                                            _selectedIndices.Contains(_subtitleWithNewHeader.GetIndex(l)));
+                if (previewOriginal == null && _selectedIndices.Length > 0)
+                {
+                    previewOriginal = _subtitleWithNewHeader.Paragraphs[_selectedIndices[0]];
+                }
+
+                if (previewOriginal != null)
+                {
+                    AddMeasureParagraphsWithCompanions(sub, previewOriginal, 0, 10000);
+                }
+                else
+                {
+                    sub.Paragraphs.Add(new Paragraph(GetPreviewParagraph()));
+                }
                 File.WriteAllText(assaTempFileName, new AdvancedSubStationAlpha().ToText(sub, string.Empty));
 
                 // hard code subtitle
@@ -940,18 +1111,7 @@ namespace Nikse.SubtitleEdit.Forms.Assa
                 {
                     var idx = _selectedIndices[i];
                     var p = _subtitleWithNewHeader.Paragraphs[idx];
-
-                    // remove fade tags 
-                    var text = p.Text;
-                    text = Regex.Replace(text, @"{\\fad\([\d\.,]*\)}", string.Empty);
-                    text = Regex.Replace(text, @"\\fad\([\d\.,]*\)", string.Empty);
-                    text = Regex.Replace(text, @"{\\fade\([\d\.,]*\)}", string.Empty);
-                    text = Regex.Replace(text, @"\\fade\([\d\.,]*\)", string.Empty);
-
-                    sub.Paragraphs.Add(new Paragraph(text, i * 1000 - 500, i * 1000 + 500)
-                    {
-                        Extra = p.Extra,
-                    });
+                    AddMeasureParagraphsWithCompanions(sub, p, i * 1000 - 500, i * 1000 + 500);
                 }
 
                 File.WriteAllText(assaTempFileName, new AdvancedSubStationAlpha().ToText(sub, string.Empty));
@@ -1042,6 +1202,25 @@ namespace Nikse.SubtitleEdit.Forms.Assa
 
             progressBar1.Visible = false;
             return list;
+        }
+
+        private string GetPerStyleColorOverride(Paragraph textParagraph)
+        {
+            if (_checkBoxPerStyleColor == null || !_checkBoxPerStyleColor.Checked || textParagraph == null)
+            {
+                return string.Empty;
+            }
+
+            var styleName = !string.IsNullOrEmpty(textParagraph.Extra) ? textParagraph.Extra : textParagraph.Style;
+            if (string.IsNullOrEmpty(styleName))
+            {
+                return string.Empty;
+            }
+
+            var style = AdvancedSubStationAlpha.GetSsaStyle(styleName, _subtitleWithNewHeader.Header);
+            var c = style.Background; // "Shadow" color in the styles dialog = BackColour
+            var assAlpha = 255 - c.A; // ASS alpha is inverted: 00 = solid, FF = transparent
+            return $"{{\\1c&H{c.B:X2}{c.G:X2}{c.R:X2}&\\1a&H{assAlpha:X2}&}}";
         }
 
         private string GenerateBackgroundBox(PositionAndSize posAndSize)
@@ -1437,7 +1616,11 @@ namespace Nikse.SubtitleEdit.Forms.Assa
         private void checkBoxNoBox_CheckedChanged(object sender, EventArgs e)
         {
             groupBoxStyle.Enabled = !checkBoxOnlyDrawing.Checked;
-            buttonPrimaryColor.Enabled = !checkBoxOnlyDrawing.Checked;
+            buttonPrimaryColor.Enabled = !checkBoxOnlyDrawing.Checked && (_checkBoxPerStyleColor == null || !_checkBoxPerStyleColor.Checked);
+            if (_checkBoxPerStyleColor != null)
+            {
+                _checkBoxPerStyleColor.Enabled = !checkBoxOnlyDrawing.Checked;
+            }
             buttonOutlineColor.Enabled = !checkBoxOnlyDrawing.Checked;
             buttonShadowColor.Enabled = !checkBoxOnlyDrawing.Checked;
             numericUpDownShadowDistance.Enabled = !checkBoxOnlyDrawing.Checked;
