@@ -12593,6 +12593,150 @@ namespace Nikse.SubtitleEdit.Forms
             SplitSelectedParagraph(null, null);
         }
 
+        /// <summary>
+        /// Lanes fork: fraction of the paragraph's duration at which the split occurs (0..1).
+        /// Falls back to 0.5 when no valid split position is available.
+        /// </summary>
+        private static double GetSplitFraction(double? splitSeconds, Paragraph p)
+        {
+            if (splitSeconds.HasValue && p != null && p.DurationTotalMilliseconds > 1)
+            {
+                var ms = splitSeconds.Value * TimeCode.BaseUnit;
+                if (ms > p.StartTime.TotalMilliseconds && ms < p.EndTime.TotalMilliseconds)
+                {
+                    return (ms - p.StartTime.TotalMilliseconds) / p.DurationTotalMilliseconds;
+                }
+            }
+
+            return 0.5;
+        }
+
+        /// <summary>
+        /// Lanes fork: find the raw text index of the sentence boundary nearest to the given
+        /// fraction of the visible (tag-stripped) text. Handles Japanese (。！？…) and Latin
+        /// (. ! ? …) sentence enders, absorbing trailing closing quotes/brackets, and skips
+        /// content inside {\...} and &lt;...&gt; tags. Returns null when no usable boundary exists.
+        /// </summary>
+        private static int? GetSentenceSplitIndex(string text, double fraction)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return null;
+            }
+
+            const string boundaryChars = "。．！？…!?؟‼⁉";
+            const string closingChars = "」』）)]】〉》\"'”’";
+
+            var candidates = new List<KeyValuePair<int, int>>(); // raw index after boundary run, visible position
+            var visible = 0;
+            var i = 0;
+            var n = text.Length;
+            var inCurly = false;
+            var inAngle = false;
+            while (i < n)
+            {
+                var ch = text[i];
+                if (inCurly)
+                {
+                    if (ch == '}')
+                    {
+                        inCurly = false;
+                    }
+
+                    i++;
+                    continue;
+                }
+
+                if (inAngle)
+                {
+                    if (ch == '>')
+                    {
+                        inAngle = false;
+                    }
+
+                    i++;
+                    continue;
+                }
+
+                if (ch == '{')
+                {
+                    inCurly = true;
+                    i++;
+                    continue;
+                }
+
+                if (ch == '<')
+                {
+                    inAngle = true;
+                    i++;
+                    continue;
+                }
+
+                if (boundaryChars.IndexOf(ch) >= 0)
+                {
+                    // a period inside a number ("1.5") is not a sentence boundary
+                    if (ch == '.' && i + 1 < n && char.IsDigit(text[i + 1]))
+                    {
+                        visible++;
+                        i++;
+                        continue;
+                    }
+
+                    var isAsciiEnder = ch == '.' || ch == '!' || ch == '?';
+                    visible++;
+                    i++;
+
+                    // absorb consecutive enders ("!?", "……") and closing quotes/brackets
+                    while (i < n && (boundaryChars.IndexOf(text[i]) >= 0 || closingChars.IndexOf(text[i]) >= 0))
+                    {
+                        visible++;
+                        i++;
+                    }
+
+                    // half-width enders need a following space/tag/end to count, so "e.g" or URLs don't split
+                    if (isAsciiEnder && i < n && !char.IsWhiteSpace(text[i]) && text[i] != '{' && text[i] != '<')
+                    {
+                        continue;
+                    }
+
+                    candidates.Add(new KeyValuePair<int, int>(i, visible));
+                    continue;
+                }
+
+                if (!char.IsWhiteSpace(ch))
+                {
+                    visible++;
+                }
+
+                i++;
+            }
+
+            if (visible == 0 || candidates.Count == 0)
+            {
+                return null;
+            }
+
+            var target = Math.Max(0.0, Math.Min(1.0, fraction)) * visible;
+            int? best = null;
+            var bestDistance = double.MaxValue;
+            foreach (var candidate in candidates)
+            {
+                if (candidate.Value >= visible)
+                {
+                    continue; // boundary at the very end — nothing left for the second half
+                }
+
+                var distance = Math.Abs(candidate.Value - target);
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    best = candidate.Key;
+                }
+            }
+
+            return best;
+        }
+
         private void SplitSelectedParagraph(double? splitSeconds, int? textIndex, bool autoBreak = false)
         {
             var maxSingleLineLength = Configuration.Settings.General.SubtitleLineMaximumLength;
@@ -12620,6 +12764,16 @@ namespace Nikse.SubtitleEdit.Forms
 
                 string oldText = currentParagraph.Text;
                 var lines = currentParagraph.Text.SplitToLines();
+
+                // Lanes fork: when no explicit cursor split position exists (waveform/menu split),
+                // divide the text at the sentence boundary nearest the split-time proportion.
+                var autoSentenceSplit = textIndex == null && originalTextIndex == null && Configuration.Settings.General.SplitAtSentenceBoundary;
+                var splitFraction = GetSplitFraction(splitSeconds, currentParagraph);
+                if (autoSentenceSplit)
+                {
+                    textIndex = GetSentenceSplitIndex(oldText, splitFraction);
+                }
+
                 if (textIndex != null)
                 {
                     var ix = Math.Min(oldText.Length, textIndex.Value);
@@ -12855,6 +13009,14 @@ namespace Nikse.SubtitleEdit.Forms
                         }
 
                         oldText = originalCurrent.Text;
+
+                        // Lanes fork: sentence-aware split for the original language too,
+                        // using the same time proportion but its own nearest sentence boundary.
+                        if (autoSentenceSplit && originalTextIndex == null)
+                        {
+                            originalTextIndex = GetSentenceSplitIndex(oldText, splitFraction);
+                        }
+
                         if (originalTextIndex != null)
                         {
                             var firstPart = oldText.Substring(0, originalTextIndex.Value).Trim();

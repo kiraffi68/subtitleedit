@@ -204,6 +204,7 @@ namespace Nikse.SubtitleEdit.Core.Settings
         public bool UseTimeFormatHHMMSSFF { get; set; }
         public int SplitBehavior { get; set; }
         public bool SplitRemovesDashes { get; set; }
+        public bool SplitAtSentenceBoundary { get; set; }
         public int ClearStatusBarAfterSeconds { get; set; }
         public string Company { get; set; }
         public bool MoveVideo100Or500MsPlaySmallSample { get; set; }
@@ -393,6 +394,7 @@ namespace Nikse.SubtitleEdit.Core.Settings
             UseTimeFormatHHMMSSFF = false;
             SplitBehavior = 1; // 0=take gap from left, 1=divide evenly, 2=take gap from right
             SplitRemovesDashes = true;
+            SplitAtSentenceBoundary = true; // Lanes fork: split text at sentence boundary nearest the split position
             ClearStatusBarAfterSeconds = 10;
             MoveVideo100Or500MsPlaySmallSample = false;
             DisableVideoAutoLoading = false;

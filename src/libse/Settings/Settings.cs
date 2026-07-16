@@ -1501,6 +1501,12 @@ namespace Nikse.SubtitleEdit.Core.Settings
                 settings.General.SplitRemovesDashes = Convert.ToBoolean(subNode.InnerText.Trim());
             }
 
+            subNode = node.SelectSingleNode("SplitAtSentenceBoundary");
+            if (subNode != null)
+            {
+                settings.General.SplitAtSentenceBoundary = Convert.ToBoolean(subNode.InnerText.Trim());
+            }
+
             subNode = node.SelectSingleNode("ClearStatusBarAfterSeconds");
             if (subNode != null)
             {
@@ -9158,6 +9164,7 @@ namespace Nikse.SubtitleEdit.Core.Settings
                 xmlWriter.WriteElementString("UseTimeFormatHHMMSSFF", settings.General.UseTimeFormatHHMMSSFF.ToString(CultureInfo.InvariantCulture));
                 xmlWriter.WriteElementString("SplitBehavior", settings.General.SplitBehavior.ToString(CultureInfo.InvariantCulture));
                 xmlWriter.WriteElementString("SplitRemovesDashes", settings.General.SplitRemovesDashes.ToString(CultureInfo.InvariantCulture));
+                xmlWriter.WriteElementString("SplitAtSentenceBoundary", settings.General.SplitAtSentenceBoundary.ToString(CultureInfo.InvariantCulture));
                 xmlWriter.WriteElementString("ClearStatusBarAfterSeconds", settings.General.ClearStatusBarAfterSeconds.ToString(CultureInfo.InvariantCulture));
                 xmlWriter.WriteElementString("Company", settings.General.Company);
                 xmlWriter.WriteElementString("MoveVideo100Or500MsPlaySmallSample", settings.General.MoveVideo100Or500MsPlaySmallSample.ToString(CultureInfo.InvariantCulture));
