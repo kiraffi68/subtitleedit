@@ -1517,7 +1517,8 @@ namespace Nikse.SubtitleEdit.Controls
                     }
                     SetMinMaxViaSeconds(seconds);
                 }
-                else if (SetParagraphBorderHit(milliseconds, SelectedParagraph) || SetParagraphBorderHit(milliseconds, _displayableParagraphs))
+                else if ((IsInLane(SelectedParagraph, GetLaneAtY(e.Y)) && SetParagraphBorderHit(milliseconds, SelectedParagraph)) ||
+                         SetParagraphBorderHit(milliseconds, _displayableParagraphs, e.Y))
                 {
                     NewSelectionParagraph = null;
                     if (_mouseDownParagraph != null)
@@ -1733,10 +1734,16 @@ namespace Nikse.SubtitleEdit.Controls
             }
         }
 
-        private bool SetParagraphBorderHit(int milliseconds, List<Paragraph> paragraphs)
+        private bool SetParagraphBorderHit(int milliseconds, List<Paragraph> paragraphs, int mouseY = -1)
         {
+            var lane = GetLaneAtY(mouseY);
             foreach (var p in paragraphs)
             {
+                if (!IsInLane(p, lane))
+                {
+                    continue;
+                }
+
                 var hit = SetParagraphBorderHit(milliseconds, p);
                 if (hit)
                 {
@@ -1746,14 +1753,99 @@ namespace Nikse.SubtitleEdit.Controls
             return false;
         }
 
+        /// <summary>
+        /// Lane band index for a mouse Y coordinate, or -1 when lane filtering is inactive
+        /// (lanes disabled, single lane, or no Y available).
+        /// </summary>
+        private int GetLaneAtY(int y)
+        {
+            if (!LanesEnabled || _laneCount <= 1 || Height <= 0 || y < 0)
+            {
+                return -1;
+            }
+
+            var laneHeight = Math.Max(1, Height / _laneCount);
+            return Math.Min(y / laneHeight, _laneCount - 1);
+        }
+
+        /// <summary>
+        /// True if the paragraph belongs to the given lane band, or if lane filtering is inactive.
+        /// </summary>
+        private bool IsInLane(Paragraph p, int lane)
+        {
+            if (lane < 0 || p == null)
+            {
+                return true;
+            }
+
+            return _laneByParagraphId.TryGetValue(p.Id, out var l) && l == lane;
+        }
+
+        /// <summary>
+        /// Previous displayable paragraph in the same lane (by list order, which is start-time order).
+        /// Falls back to plain list adjacency when lane mode is inactive.
+        /// </summary>
+        private Paragraph GetPrevDisplayableInSameLane(Paragraph paragraph)
+        {
+            var idx = _displayableParagraphs.IndexOf(paragraph);
+            if (idx < 0)
+            {
+                return null;
+            }
+
+            if (!LanesEnabled || _laneCount <= 1 || !_laneByParagraphId.TryGetValue(paragraph.Id, out var lane))
+            {
+                return idx > 0 ? _displayableParagraphs[idx - 1] : null;
+            }
+
+            for (var i = idx - 1; i >= 0; i--)
+            {
+                var p = _displayableParagraphs[i];
+                if (_laneByParagraphId.TryGetValue(p.Id, out var l) && l == lane)
+                {
+                    return p;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Next displayable paragraph in the same lane (by list order, which is start-time order).
+        /// Falls back to plain list adjacency when lane mode is inactive.
+        /// </summary>
+        private Paragraph GetNextDisplayableInSameLane(Paragraph paragraph)
+        {
+            var idx = _displayableParagraphs.IndexOf(paragraph);
+            if (idx < 0)
+            {
+                return null;
+            }
+
+            if (!LanesEnabled || _laneCount <= 1 || !_laneByParagraphId.TryGetValue(paragraph.Id, out var lane))
+            {
+                return idx < _displayableParagraphs.Count - 1 ? _displayableParagraphs[idx + 1] : null;
+            }
+
+            for (var i = idx + 1; i < _displayableParagraphs.Count; i++)
+            {
+                var p = _displayableParagraphs[i];
+                if (_laneByParagraphId.TryGetValue(p.Id, out var l) && l == lane)
+                {
+                    return p;
+                }
+            }
+
+            return null;
+        }
+
         private Paragraph GetParagraphAtMilliseconds(int milliseconds, int mouseY = -1)
         {
-            // In lane mode, prefer the paragraph whose lane band contains the mouse Y,
-            // so overlapping subtitles are individually clickable.
-            if (LanesEnabled && mouseY >= 0 && _laneCount > 1 && Height > 0)
+            // In lane mode, only the paragraph whose lane band contains the mouse Y is hit,
+            // so overlapping subtitles are individually and deterministically clickable.
+            var mouseLane = GetLaneAtY(mouseY);
+            if (mouseLane >= 0)
             {
-                var laneHeight = Math.Max(1, Height / _laneCount);
-                var mouseLane = Math.Min(mouseY / laneHeight, _laneCount - 1);
                 foreach (var pLane in _displayableParagraphs)
                 {
                     if (IsParagraphHit(milliseconds, pLane) &&
@@ -1763,7 +1855,9 @@ namespace Nikse.SubtitleEdit.Controls
                         return pLane;
                     }
                 }
-                // nothing in that lane at this time — fall back to time-only hit test
+
+                // strict: never grab a block from another lane
+                return null;
             }
 
             Paragraph p = null;
@@ -1796,10 +1890,9 @@ namespace Nikse.SubtitleEdit.Controls
 
             if (IsParagraphBorderStartHit(milliseconds, paragraph.StartTime.TotalMilliseconds))
             {
-                var idx = _displayableParagraphs.IndexOf(paragraph);
-                if (idx > 0)
+                var prev = GetPrevDisplayableInSameLane(paragraph);
+                if (prev != null)
                 {
-                    var prev = _displayableParagraphs[idx - 1];
                     if (IsParagraphBorderStartHit(milliseconds, prev.EndTime.TotalMilliseconds) && ModifierKeys != Keys.Alt)
                     {
                         _mouseDownParagraph = null;
@@ -1818,10 +1911,9 @@ namespace Nikse.SubtitleEdit.Controls
 
             if (IsParagraphBorderEndHit(milliseconds, paragraph.EndTime.TotalMilliseconds))
             {
-                var idx = _displayableParagraphs.IndexOf(paragraph);
-                if (idx < _displayableParagraphs.Count - 2 && ModifierKeys != Keys.Alt)
+                var next = GetNextDisplayableInSameLane(paragraph);
+                if (next != null && ModifierKeys != Keys.Alt)
                 {
-                    var next = _displayableParagraphs[idx + 1];
                     if (IsParagraphBorderStartHit(milliseconds, next.StartTime.TotalMilliseconds))
                     {
                         _mouseDownParagraph = null;
@@ -1909,8 +2001,8 @@ namespace Nikse.SubtitleEdit.Controls
                 {
                     Cursor = Cursors.VSplit;
                 }
-                else if (IsParagraphBorderHit(milliseconds, SelectedParagraph) ||
-                         IsParagraphBorderHit(milliseconds, _displayableParagraphs))
+                else if ((IsInLane(SelectedParagraph, GetLaneAtY(e.Y)) && IsParagraphBorderHit(milliseconds, SelectedParagraph)) ||
+                         IsParagraphBorderHit(milliseconds, _displayableParagraphs, e.Y))
                 {
                     Cursor = Cursors.VSplit;
                 }
@@ -2239,10 +2331,16 @@ namespace Nikse.SubtitleEdit.Controls
             }
         }
 
-        private bool IsParagraphBorderHit(int milliseconds, List<Paragraph> paragraphs)
+        private bool IsParagraphBorderHit(int milliseconds, List<Paragraph> paragraphs, int mouseY = -1)
         {
+            var lane = GetLaneAtY(mouseY);
             foreach (var p in paragraphs)
             {
+                if (!IsInLane(p, lane))
+                {
+                    continue;
+                }
+
                 var hit = IsParagraphBorderHit(milliseconds, p);
                 if (hit)
                 {
