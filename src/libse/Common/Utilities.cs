@@ -1260,34 +1260,87 @@ namespace Nikse.SubtitleEdit.Core.Common
             }
 
             var middle = paragraph.StartTime.TotalMilliseconds + paragraph.DurationTotalMilliseconds / 2.0;
-            if (index < originalParagraphs.Count)
+
+            // Lanes fork: when the working line carries an ASSA style and the original list
+            // contains that style too, pair only within the same style ("track"). Time-only
+            // matching is ambiguous with overlapping multi-speaker lines and lets lines steal
+            // each other's original on insert/delete/split. Empty-style originals (legacy
+            // auto-created companions) remain pairable as a fallback. Kill switch:
+            // Settings.General.OriginalPairByStyle.
+            var styleAware = Configuration.Settings.General.OriginalPairByStyle &&
+                             !string.IsNullOrEmpty(paragraph.Extra) &&
+                             originalParagraphs.Any(op => string.Equals(op.Extra, paragraph.Extra, StringComparison.OrdinalIgnoreCase));
+
+            bool SameStyle(Paragraph o) => string.Equals(o.Extra, paragraph.Extra, StringComparison.OrdinalIgnoreCase);
+            bool CanPair(Paragraph o) => !styleAware || SameStyle(o) || string.IsNullOrEmpty(o.Extra);
+
+            bool TimeMatch(Paragraph o)
             {
-                var o = originalParagraphs[index];
                 if (Math.Abs(o.StartTime.TotalMilliseconds - paragraph.StartTime.TotalMilliseconds) < 50)
                 {
-                    return o;
+                    return true;
                 }
 
                 if (Math.Abs(o.EndTime.TotalMilliseconds - paragraph.EndTime.TotalMilliseconds) < 50 &&
                     paragraph.StartTime.TotalMilliseconds < o.EndTime.TotalMilliseconds)
                 {
-                    return o;
+                    return true;
                 }
 
-                if (o.StartTime.TotalMilliseconds < middle && o.EndTime.TotalMilliseconds > middle)
+                return o.StartTime.TotalMilliseconds < middle && o.EndTime.TotalMilliseconds > middle;
+            }
+
+            if (styleAware)
+            {
+                // 1) Index candidate, but only if it is in the same track
+                if (index < originalParagraphs.Count && SameStyle(originalParagraphs[index]) && TimeMatch(originalParagraphs[index]))
                 {
-                    return o;
+                    return originalParagraphs[index];
+                }
+
+                if (paragraph.StartTime.IsMaxTime && index < originalParagraphs.Count &&
+                    originalParagraphs[index].StartTime.IsMaxTime && SameStyle(originalParagraphs[index]))
+                {
+                    return originalParagraphs[index];
+                }
+
+                // 2) Same track, start time within tolerance (same-track lines cannot overlap,
+                //    so 50 ms tolerance is unambiguous)
+                foreach (var p in originalParagraphs)
+                {
+                    if (!p.StartTime.IsMaxTime && SameStyle(p) &&
+                        Math.Abs(p.StartTime.TotalMilliseconds - paragraph.StartTime.TotalMilliseconds) < 50)
+                    {
+                        return p;
+                    }
+                }
+
+                // 3) Same track, original spans this line's midpoint
+                foreach (var p in originalParagraphs)
+                {
+                    if (!p.StartTime.IsMaxTime && SameStyle(p) &&
+                        p.StartTime.TotalMilliseconds < middle && p.EndTime.TotalMilliseconds > middle)
+                    {
+                        return p;
+                    }
                 }
             }
 
-            if (paragraph.StartTime.IsMaxTime && index < originalParagraphs.Count && originalParagraphs[index].StartTime.IsMaxTime)
+            // Legacy path (also the style-aware fallback for empty-style originals)
+            if (index < originalParagraphs.Count && CanPair(originalParagraphs[index]) && TimeMatch(originalParagraphs[index]))
+            {
+                return originalParagraphs[index];
+            }
+
+            if (paragraph.StartTime.IsMaxTime && index < originalParagraphs.Count &&
+                originalParagraphs[index].StartTime.IsMaxTime && CanPair(originalParagraphs[index]))
             {
                 return originalParagraphs[index];
             }
 
             foreach (var p in originalParagraphs)
             {
-                if (!p.StartTime.IsMaxTime && Math.Abs(p.StartTime.TotalMilliseconds - paragraph.StartTime.TotalMilliseconds) < 0.01)
+                if (!p.StartTime.IsMaxTime && CanPair(p) && Math.Abs(p.StartTime.TotalMilliseconds - paragraph.StartTime.TotalMilliseconds) < 0.01)
                 {
                     return p;
                 }
@@ -1295,7 +1348,7 @@ namespace Nikse.SubtitleEdit.Core.Common
 
             foreach (var p in originalParagraphs)
             {
-                if (!p.StartTime.IsMaxTime &&
+                if (!p.StartTime.IsMaxTime && CanPair(p) &&
                     p.StartTime.TotalMilliseconds < middle && p.EndTime.TotalMilliseconds > middle)
                 {
                     return p;

@@ -898,7 +898,7 @@ namespace Nikse.SubtitleEdit.Forms
                             var original = Utilities.GetOriginalParagraph(idx + i + 1, p, _subtitleOriginal.Paragraphs);
                             if (original == null)
                             {
-                                _subtitleOriginal.InsertParagraphInCorrectTimeOrder(new Paragraph(string.Empty, p.StartTime.TotalMilliseconds, p.EndTime.TotalMilliseconds));
+                                _subtitleOriginal.InsertParagraphInCorrectTimeOrder(new Paragraph(string.Empty, p.StartTime.TotalMilliseconds, p.EndTime.TotalMilliseconds) { Extra = p.Extra, Style = p.Style });
                             }
                         }
                     }
@@ -22586,7 +22586,7 @@ namespace Nikse.SubtitleEdit.Forms
                                 var original = Utilities.GetOriginalParagraph(firstIndex + i + 1, p, _subtitleOriginal.Paragraphs);
                                 if (original == null)
                                 {
-                                    _subtitleOriginal.InsertParagraphInCorrectTimeOrder(new Paragraph(string.Empty, p.StartTime.TotalMilliseconds, p.EndTime.TotalMilliseconds));
+                                    _subtitleOriginal.InsertParagraphInCorrectTimeOrder(new Paragraph(string.Empty, p.StartTime.TotalMilliseconds, p.EndTime.TotalMilliseconds) { Extra = p.Extra, Style = p.Style });
                                 }
                             }
                         }
@@ -22613,7 +22613,7 @@ namespace Nikse.SubtitleEdit.Forms
                                 var original = Utilities.GetOriginalParagraph(_subtitle.Paragraphs.Count - 1, p, _subtitleOriginal.Paragraphs);
                                 if (original == null)
                                 {
-                                    _subtitleOriginal.InsertParagraphInCorrectTimeOrder(new Paragraph(string.Empty, p.StartTime.TotalMilliseconds, p.EndTime.TotalMilliseconds));
+                                    _subtitleOriginal.InsertParagraphInCorrectTimeOrder(new Paragraph(string.Empty, p.StartTime.TotalMilliseconds, p.EndTime.TotalMilliseconds) { Extra = p.Extra, Style = p.Style });
                                 }
                             }
                         }
@@ -22644,7 +22644,7 @@ namespace Nikse.SubtitleEdit.Forms
                                     var original = Utilities.GetOriginalParagraph(idx, p, _subtitleOriginal.Paragraphs);
                                     if (original == null)
                                     {
-                                        _subtitleOriginal.InsertParagraphInCorrectTimeOrder(new Paragraph(string.Empty, p.StartTime.TotalMilliseconds, p.EndTime.TotalMilliseconds));
+                                        _subtitleOriginal.InsertParagraphInCorrectTimeOrder(new Paragraph(string.Empty, p.StartTime.TotalMilliseconds, p.EndTime.TotalMilliseconds) { Extra = p.Extra, Style = p.Style });
                                     }
                                 }
 
@@ -22713,7 +22713,7 @@ namespace Nikse.SubtitleEdit.Forms
                                     var original = Utilities.GetOriginalParagraph(_subtitle.Paragraphs.Count - 1, newParagraph, _subtitleOriginal.Paragraphs);
                                     if (original == null)
                                     {
-                                        _subtitleOriginal.InsertParagraphInCorrectTimeOrder(new Paragraph(string.Empty, newParagraph.StartTime.TotalMilliseconds, newParagraph.EndTime.TotalMilliseconds));
+                                        _subtitleOriginal.InsertParagraphInCorrectTimeOrder(new Paragraph(string.Empty, newParagraph.StartTime.TotalMilliseconds, newParagraph.EndTime.TotalMilliseconds) { Extra = newParagraph.Extra, Style = newParagraph.Style });
                                     }
                                 }
                             }
@@ -28168,7 +28168,7 @@ namespace Nikse.SubtitleEdit.Forms
                         }
                         else
                         {
-                            p = new Paragraph(string.Empty, p.StartTime.TotalMilliseconds, p.EndTime.TotalMilliseconds);
+                            p = new Paragraph(string.Empty, p.StartTime.TotalMilliseconds, p.EndTime.TotalMilliseconds) { Extra = p.Extra, Style = p.Style };
                         }
                     }
 
