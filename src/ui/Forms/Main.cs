@@ -12765,9 +12765,9 @@ namespace Nikse.SubtitleEdit.Forms
                 Style = trackNeighbour?.Style,
                 Actor = trackNeighbour?.Actor,
                 Layer = trackNeighbour?.Layer ?? 0,
-                MarginL = trackNeighbour?.MarginL ?? 0,
-                MarginR = trackNeighbour?.MarginR ?? 0,
-                MarginV = trackNeighbour?.MarginV ?? 0,
+                MarginL = trackNeighbour?.MarginL,
+                MarginR = trackNeighbour?.MarginR,
+                MarginV = trackNeighbour?.MarginV,
                 Effect = trackNeighbour?.Effect,
             };
 
