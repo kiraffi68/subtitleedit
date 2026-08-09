@@ -9340,7 +9340,18 @@ namespace Nikse.SubtitleEdit.Forms
                 }
 
                 setStylesForSelectedLinesToolStripMenuItem.DropDownItems.Clear();
-                foreach (var style in styles)
+
+                // Lanes fork: hide the auto-generated background-box styles. They are never set by
+                // hand, and this submenu is rebuilt on every right-click - one ToolStripMenuItem per
+                // style with a WinForms layout pass each - so an episode's worth of them made the
+                // context menu take seconds to open.
+                var menuStyles = styles.Where(s => !s.StartsWith("SE-box-bg", StringComparison.Ordinal)).ToList();
+                if (menuStyles.Count == 0)
+                {
+                    menuStyles = styles;
+                }
+
+                foreach (var style in menuStyles)
                 {
                     setStylesForSelectedLinesToolStripMenuItem.DropDownItems.Add(style, null, SetStyle);
                     if (SubtitleListview1.SelectedItems.Count == 1 && SubtitleListview1.SelectedItems.Count > 0 &&
@@ -9351,7 +9362,7 @@ namespace Nikse.SubtitleEdit.Forms
                 }
 
                 toolStripMenuItemAssStyles.Visible = true;
-                if (styles.Count > 1)
+                if (menuStyles.Count > 1)
                 {
                     setStylesForSelectedLinesToolStripMenuItem.Visible = true;
                     UiUtil.FixFonts(setStylesForSelectedLinesToolStripMenuItem);
@@ -9379,9 +9390,10 @@ namespace Nikse.SubtitleEdit.Forms
                     {
                         actors.Add(p.Actor);
                     }
-
-                    actors.Sort();
                 }
+
+                // Lanes fork: sort once, not once per paragraph.
+                actors.Sort();
 
                 setActorForSelectedLinesToolStripMenuItem.DropDownItems.Clear();
                 for (var index = 0; index < actors.Count; index++)
@@ -11227,11 +11239,11 @@ namespace Nikse.SubtitleEdit.Forms
                     var currentOriginal = Utilities.GetOriginalParagraph(firstSelectedIndex, _subtitle.Paragraphs[firstSelectedIndex], _subtitleOriginal.Paragraphs);
                     if (currentOriginal != null)
                     {
-                        _subtitleOriginal.Paragraphs.Insert(_subtitleOriginal.Paragraphs.IndexOf(currentOriginal), new Paragraph(newParagraph));
+                        _subtitleOriginal.Paragraphs.Insert(_subtitleOriginal.Paragraphs.IndexOf(currentOriginal), NewOriginalTrackParagraph(newParagraph, currentOriginal));
                     }
                     else
                     {
-                        _subtitleOriginal.InsertParagraphInCorrectTimeOrder(new Paragraph(newParagraph));
+                        _subtitleOriginal.InsertParagraphInCorrectTimeOrder(NewOriginalTrackParagraph(newParagraph, null));
                     }
 
                     _subtitleOriginal.Renumber();
@@ -11345,11 +11357,11 @@ namespace Nikse.SubtitleEdit.Forms
                 var currentOriginal = Utilities.GetOriginalParagraph(firstSelectedIndex - 1, _subtitle.Paragraphs[firstSelectedIndex - 1], _subtitleOriginal.Paragraphs);
                 if (currentOriginal != null)
                 {
-                    _subtitleOriginal.Paragraphs.Insert(_subtitleOriginal.Paragraphs.IndexOf(currentOriginal) + 1, new Paragraph(newParagraph));
+                    _subtitleOriginal.Paragraphs.Insert(_subtitleOriginal.Paragraphs.IndexOf(currentOriginal) + 1, NewOriginalTrackParagraph(newParagraph, currentOriginal));
                 }
                 else
                 {
-                    _subtitleOriginal.InsertParagraphInCorrectTimeOrder(new Paragraph(newParagraph));
+                    _subtitleOriginal.InsertParagraphInCorrectTimeOrder(NewOriginalTrackParagraph(newParagraph, null));
                 }
 
                 _subtitleOriginal.Renumber();
@@ -12737,6 +12749,31 @@ namespace Nikse.SubtitleEdit.Forms
             return best;
         }
 
+        /// <summary>
+        /// Lanes fork: paragraphs copied from the working subtitle into _subtitleOriginal must not
+        /// carry the working file's ASSA style. GetOriginalParagraph's style-aware probe would then
+        /// see a style name that does not belong to the original file, flip style-aware pairing on
+        /// for that name, and stop pairing every line in that group until the file is reloaded.
+        /// An empty Extra is deliberate when there is no known neighbour - CanPair already treats
+        /// empty-style originals as pairable, so a placeholder can never poison the probe.
+        /// </summary>
+        private static Paragraph NewOriginalTrackParagraph(Paragraph source, Paragraph trackNeighbour)
+        {
+            var p = new Paragraph(source)
+            {
+                Extra = trackNeighbour?.Extra ?? string.Empty,
+                Style = trackNeighbour?.Style,
+                Actor = trackNeighbour?.Actor,
+                Layer = trackNeighbour?.Layer ?? 0,
+                MarginL = trackNeighbour?.MarginL ?? 0,
+                MarginR = trackNeighbour?.MarginR ?? 0,
+                MarginV = trackNeighbour?.MarginV ?? 0,
+                Effect = trackNeighbour?.Effect,
+            };
+
+            return p;
+        }
+
         private void SplitSelectedParagraph(double? splitSeconds, int? textIndex, bool autoBreak = false)
         {
             var maxSingleLineLength = Configuration.Settings.General.SubtitleLineMaximumLength;
@@ -12998,7 +13035,13 @@ namespace Nikse.SubtitleEdit.Forms
                         string languageOriginal = LanguageAutoDetect.AutoDetectGoogleLanguage(_subtitleOriginal);
 
                         originalCurrent.EndTime.TotalMilliseconds = currentParagraph.EndTime.TotalMilliseconds;
-                        var originalNew = new Paragraph(newParagraph) { NewSection = false };
+
+                        // Lanes fork: the second half of the original line stays in the original
+                        // subtitle's own track. Copying newParagraph wholesale dragged the working
+                        // file's ASSA style into _subtitleOriginal and blanked the original text
+                        // for every line using that style.
+                        var originalNew = NewOriginalTrackParagraph(newParagraph, originalCurrent);
+                        originalNew.NewSection = false;
 
                         lines = originalCurrent.Text.SplitToLines();
 
@@ -26001,7 +26044,7 @@ namespace Nikse.SubtitleEdit.Forms
                 // check if original is available - and insert new paragraph in the original too
                 if (Configuration.Settings.General.AllowEditOfOriginalSubtitle && _subtitleOriginal != null && _subtitleOriginal.Paragraphs.Count > 0)
                 {
-                    _subtitleOriginal.InsertParagraphInCorrectTimeOrder(new Paragraph(newParagraph));
+                    _subtitleOriginal.InsertParagraphInCorrectTimeOrder(NewOriginalTrackParagraph(newParagraph, null));
                     _subtitleOriginal.Renumber();
                 }
 
@@ -28792,7 +28835,7 @@ namespace Nikse.SubtitleEdit.Forms
 
                 if (_subtitleOriginal != null && SubtitleListview1.IsOriginalTextColumnVisible && Configuration.Settings.General.AllowEditOfOriginalSubtitle)
                 {
-                    _subtitleOriginal.InsertParagraphInCorrectTimeOrder(new Paragraph(newParagraph));
+                    _subtitleOriginal.InsertParagraphInCorrectTimeOrder(NewOriginalTrackParagraph(newParagraph, null));
                     _subtitleOriginal.Renumber();
                 }
 
@@ -35288,11 +35331,11 @@ namespace Nikse.SubtitleEdit.Forms
                 var currentOriginal = Utilities.GetOriginalParagraph(firstSelectedIndex, _subtitle.Paragraphs[firstSelectedIndex], _subtitleOriginal.Paragraphs);
                 if (currentOriginal != null)
                 {
-                    _subtitleOriginal.Paragraphs.Insert(_subtitleOriginal.Paragraphs.IndexOf(currentOriginal) + 1, new Paragraph(currentOriginal));
+                    _subtitleOriginal.Paragraphs.Insert(_subtitleOriginal.Paragraphs.IndexOf(currentOriginal) + 1, NewOriginalTrackParagraph(currentOriginal, currentOriginal));
                 }
                 else
                 {
-                    _subtitleOriginal.InsertParagraphInCorrectTimeOrder(new Paragraph(newParagraph));
+                    _subtitleOriginal.InsertParagraphInCorrectTimeOrder(NewOriginalTrackParagraph(newParagraph, null));
                 }
 
                 _subtitleOriginal.Renumber();

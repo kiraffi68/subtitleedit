@@ -1355,6 +1355,34 @@ namespace Nikse.SubtitleEdit.Core.Common
                 }
             }
 
+            // Lanes fork: fail-safe. Style-aware pairing must never blank a line when an
+            // unambiguous plain time match exists - a single stray foreign style in the original
+            // list (e.g. dragged in from the working subtitle by split/insert) is otherwise enough
+            // to flip styleAware on for a whole style group and kill every line in it.
+            // Only an unambiguous match is accepted: better nothing than the wrong speaker's line.
+            if (styleAware)
+            {
+                Paragraph unique = null;
+                foreach (var p in originalParagraphs)
+                {
+                    if (!p.StartTime.IsMaxTime &&
+                        Math.Abs(p.StartTime.TotalMilliseconds - paragraph.StartTime.TotalMilliseconds) < 50)
+                    {
+                        if (unique != null)
+                        {
+                            return null;
+                        }
+
+                        unique = p;
+                    }
+                }
+
+                if (unique != null)
+                {
+                    return unique;
+                }
+            }
+
             return null;
         }
 

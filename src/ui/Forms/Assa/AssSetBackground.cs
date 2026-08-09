@@ -221,13 +221,22 @@ namespace Nikse.SubtitleEdit.Forms.Assa
             progressBar1.Visible = false;
             labelProgress.Text = string.Empty;
 
-            var tryCount = 0;
+            // Lanes fork: always reuse one box style name. UpdateOrAddStyle overwrites it in place,
+            // so minting a fresh random name per run only left orphans behind - hundreds of them
+            // over an episode, which is what made the right-click style menu crawl.
             _boxStyleName = "SE-box-bg";
-            var styleNames = AdvancedSubStationAlpha.GetStylesFromHeader(subtitle.Header);
-            while (styleNames.Any(p => p == _boxStyleName) && tryCount < 100)
+
+            // Sweep away box styles from earlier runs that no line references any more.
+            var usedStyleNames = new HashSet<string>(
+                subtitle.Paragraphs.Select(p => p.Extra ?? string.Empty),
+                StringComparer.OrdinalIgnoreCase);
+            var allStyles = AdvancedSubStationAlpha.GetSsaStylesFromHeader(subtitle.Header);
+            var keptStyles = allStyles
+                .Where(s => !s.Name.StartsWith("SE-box-bg", StringComparison.Ordinal) || usedStyleNames.Contains(s.Name))
+                .ToList();
+            if (keptStyles.Count > 0 && keptStyles.Count != allStyles.Count)
             {
-                _boxStyleName = $"SE-box-bg{_random.Next(1234)}";
-                tryCount++;
+                subtitle.Header = AdvancedSubStationAlpha.GetHeaderAndStylesFromAdvancedSubStationAlpha(subtitle.Header, keptStyles);
             }
 
             _checkBoxPerStyleColor = new CheckBox
