@@ -124,6 +124,126 @@ namespace Nikse.SubtitleEdit.Forms
             }
         }
 
+        /// <summary>
+        /// Lanes fork: bookmarks as start, end and comment - nothing else.
+        ///
+        /// ExportBookmarksAsCsv also writes the line number, the duration and the subtitle text.
+        /// The text is the problem: subtitle lines contain line breaks, so a bookmark row can span
+        /// several lines in the file and the column structure falls apart. Three fields, one row
+        /// each, pastes into a spreadsheet as three columns and stays readable in a text editor.
+        ///
+        /// The separator is chosen by the save dialog's filter rather than by a control of our own.
+        /// Semicolon matters because Excel follows the system list separator, which is a semicolon
+        /// wherever the comma is the decimal mark - a comma file opens as one mangled column there.
+        /// </summary>
+        public static void ExportBookmarks(Subtitle subtitle, Form form, string subtitleFileName)
+        {
+            var bookmarked = subtitle?.Paragraphs.Where(p => p.Bookmark != null).ToList();
+            if (bookmarked == null || bookmarked.Count == 0)
+            {
+                MessageBox.Show(form, "There are no bookmarks to export.", "Export bookmarks",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            // No extension: AddExtension takes it from whichever filter is selected, so switching
+            // the dropdown switches the extension too.
+            var suggestedName = string.IsNullOrEmpty(subtitleFileName)
+                ? "bookmarks"
+                : Path.GetFileNameWithoutExtension(subtitleFileName) + "_bookmarks";
+
+            using (var saveDialog = new SaveFileDialog
+            {
+                FileName = suggestedName,
+                Filter = "Tab-separated text|*.txt|CSV, semicolon separated|*.csv|CSV, comma separated|*.csv",
+                FilterIndex = 1,
+                AddExtension = true,
+            })
+            {
+                if (saveDialog.ShowDialog(form) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                char separator;
+                bool quote;
+                switch (saveDialog.FilterIndex)
+                {
+                    case 2:
+                        separator = ';';
+                        quote = true;
+                        break;
+                    case 3:
+                        separator = ',';
+                        quote = true;
+                        break;
+                    default:
+                        separator = '\t';
+                        quote = false;
+                        break;
+                }
+
+                var sb = new StringBuilder();
+                foreach (var p in bookmarked)
+                {
+                    AppendField(sb, p.StartTime.ToDisplayString(), quote);
+                    sb.Append(separator);
+                    AppendField(sb, p.EndTime.ToDisplayString(), quote);
+                    sb.Append(separator);
+                    AppendField(sb, FlattenWhitespace(p.Bookmark), quote);
+                    sb.AppendLine();
+                }
+
+                // UTF-8 with BOM: bookmark comments are often not plain ASCII, and the BOM is what
+                // makes Excel read the file as UTF-8 rather than the system code page.
+                File.WriteAllText(saveDialog.FileName, sb.ToString(), Encoding.UTF8);
+            }
+        }
+
+        /// <summary>
+        /// Lanes fork: quoting is only applied to the CSV variants. Tab-separated output stays bare
+        /// so it can be read and pasted without stray quote marks; ToCsvText always quotes, which is
+        /// valid CSV and saves having to test each field for the separator.
+        /// </summary>
+        private static void AppendField(StringBuilder sb, string value, bool quote)
+        {
+            sb.Append(quote ? ToCsvText(value) : value);
+        }
+
+        /// <summary>
+        /// Lanes fork: a tab, semicolon-adjacent newline or line break inside a comment would
+        /// silently add a column or a row, so collapse any whitespace run to a single space.
+        /// </summary>
+        private static string FlattenWhitespace(string input)
+        {
+            if (string.IsNullOrEmpty(input))
+            {
+                return string.Empty;
+            }
+
+            var sb = new StringBuilder(input.Length);
+            var lastWasSpace = false;
+            foreach (var ch in input)
+            {
+                if (char.IsWhiteSpace(ch))
+                {
+                    if (!lastWasSpace && sb.Length > 0)
+                    {
+                        sb.Append(' ');
+                    }
+
+                    lastWasSpace = true;
+                }
+                else
+                {
+                    sb.Append(ch);
+                    lastWasSpace = false;
+                }
+            }
+
+            return sb.ToString().TrimEnd();
+        }
+
         private static string MakeParagraphCsvLine(Paragraph paragraph)
         {
             const string separator = ",";

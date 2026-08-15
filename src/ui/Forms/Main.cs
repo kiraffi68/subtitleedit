@@ -169,6 +169,9 @@ namespace Nikse.SubtitleEdit.Forms
         // InitializeDuplicateAsStyleMenu.
         private ToolStripMenuItem _duplicateAsStyleToolStripMenuItem;
 
+        // Lanes fork: File > Export entry for bookmarks, see InitializeExportBookmarksMenu.
+        private ToolStripMenuItem _exportBookmarksToolStripMenuItem;
+
         // Lanes fork: the paragraphs behind the text we last put on the clipboard, kept so an
         // in-app paste can restore exact times. See RememberCopiedParagraphs.
         private string _copiedParagraphsClipboardText;
@@ -409,6 +412,7 @@ namespace Nikse.SubtitleEdit.Forms
 
                 _contextMenuStripPlayRate = new ContextMenuStrip();
                 InitializeDuplicateAsStyleMenu();
+                InitializeExportBookmarksMenu();
                 InitializeTimeStepCombo();
                 SetLanguage(Configuration.Settings.General.Language);
                 toolStripStatusNetworking.Visible = false;
@@ -26689,6 +26693,10 @@ namespace Nikse.SubtitleEdit.Forms
             toolStripMenuItemVerifyCompleteness.Enabled = subtitleLoaded;
             toolStripMenuItemStatistics.Enabled = subtitleLoaded;
             toolStripMenuItemExport.Enabled = subtitleLoaded;
+
+            // Lanes fork: grey out bookmark export when there is nothing to write.
+            _exportBookmarksToolStripMenuItem.Enabled = subtitleLoaded &&
+                _subtitle != null && _subtitle.Paragraphs.Any(p => p.Bookmark != null);
             toolStripMenuItemOpenKeepVideo.Enabled = _videoFileName != null;
             if (subtitleLoaded && Configuration.Settings.General.AllowEditOfOriginalSubtitle && _subtitleOriginal != null && _subtitleOriginal.Paragraphs.Count > 0)
             {
@@ -35403,6 +35411,25 @@ namespace Nikse.SubtitleEdit.Forms
         /// Built at runtime so Main.Designer.cs stays untouched. Placement is handled by MainResize,
         /// which already derives every control right of the duration box from a single firstLeft.
         /// </summary>
+        /// <summary>
+        /// Lanes fork: put bookmark export in File > Export, where anyone would look for it.
+        /// The stock entry only exists on the right-click menu of the bookmark icon, and that icon
+        /// is hidden unless the selected line happens to be bookmarked - effectively undiscoverable.
+        /// Built at runtime so Main.Designer.cs stays untouched.
+        /// </summary>
+        private void InitializeExportBookmarksMenu()
+        {
+            _exportBookmarksToolStripMenuItem = new ToolStripMenuItem("Bookmarks...")
+            {
+                Name = "exportBookmarksToolStripMenuItem",
+            };
+            _exportBookmarksToolStripMenuItem.Click += (sender, e) =>
+                BookmarksGoTo.ExportBookmarks(_subtitle, this, _fileName);
+
+            toolStripMenuItemExport.DropDownItems.Insert(0, _exportBookmarksToolStripMenuItem);
+            toolStripMenuItemExport.DropDownItems.Insert(1, new ToolStripSeparator());
+        }
+
         private void InitializeTimeStepCombo()
         {
             // Lanes fork: minus/plus stepper buttons on the two spinners that get nudged constantly
