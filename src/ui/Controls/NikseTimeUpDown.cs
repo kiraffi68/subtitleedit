@@ -663,8 +663,8 @@ namespace Nikse.SubtitleEdit.Controls
 
         protected override void OnMouseMove(MouseEventArgs e)
         {
-            var left = RightToLeft == RightToLeft.Yes ? 0 : Width - ButtonsWidth;
-            var right = RightToLeft == RightToLeft.Yes ? ButtonsWidth : Width;
+            var left = RightToLeft == RightToLeft.Yes ? 0 : Width - ButtonsZoneWidth;
+            var right = RightToLeft == RightToLeft.Yes ? ButtonsZoneWidth : Width;
             var height = Height / 2 - 3;
             const int top = 2;
 
@@ -673,7 +673,15 @@ namespace Nikse.SubtitleEdit.Controls
 
             if (_mouseX >= left && _mouseX <= right)
             {
-                if (_mouseY > top + height)
+                // Lanes fork: the stepper splits its zone left/right rather than top/bottom, and
+                // both halves run the full height of the control, so only X decides which is hit.
+                // _buttonDownActive is minus, _buttonUpActive is plus - reusing those flags keeps
+                // OnMouseDown, the repeat timer and the pressed states working unchanged.
+                var wantDown = _stepperButtons
+                    ? _mouseX < left + NikseUpDown.StepperZoneWidth / 2
+                    : _mouseY > top + height;
+
+                if (wantDown)
                 {
                     if (!_buttonDownActive)
                     {
@@ -707,6 +715,25 @@ namespace Nikse.SubtitleEdit.Controls
         }
 
         private const int ButtonsWidth = 13;
+
+        /// <summary>
+        /// Lanes fork: opt in to the two-button minus/plus stepper instead of the stacked arrows.
+        /// Off by default so every other time control in the application is untouched.
+        /// </summary>
+        [RefreshProperties(RefreshProperties.Repaint)]
+        public bool StepperButtons
+        {
+            get => _stepperButtons;
+            set
+            {
+                _stepperButtons = value;
+                Invalidate();
+            }
+        }
+
+        private bool _stepperButtons;
+
+        private int ButtonsZoneWidth => _stepperButtons ? NikseUpDown.StepperZoneWidth : ButtonsWidth;
 
         [RefreshProperties(RefreshProperties.Repaint)]
         public new bool Enabled
@@ -748,7 +775,7 @@ namespace Nikse.SubtitleEdit.Controls
             {
                 if (_maskedTextBox != null)
                 {
-                    _maskedTextBox.Width = Width - ButtonsWidth - 3;
+                    _maskedTextBox.Width = Width - ButtonsZoneWidth - 3;
                 }
 
                 base.Width = value;
@@ -767,9 +794,14 @@ namespace Nikse.SubtitleEdit.Controls
             _maskedTextBox.BackColor = BackColor;
             _maskedTextBox.ForeColor = ButtonForeColor;
             //_maskedTextBox.Top = 2;
-            _maskedTextBox.Left = RightToLeft == RightToLeft.Yes ? ButtonsWidth : 3;
+            _maskedTextBox.Left = RightToLeft == RightToLeft.Yes ? ButtonsZoneWidth : 3;
             //_maskedTextBox.Height = Height - 4;
-            _maskedTextBox.Width = Width - ButtonsWidth - 3;
+            _maskedTextBox.Width = Width - ButtonsZoneWidth - 3;
+
+            // Lanes fork: the inner text box is centred once in the constructor and never again, so
+            // a control that is made taller than the default 23px leaves its text stranded near the
+            // top. Recentre on every paint - cheap, and the only way a taller box looks right.
+            _maskedTextBox.Top = Math.Max(1, (Height - _maskedTextBox.Height) / 2);
             _maskedTextBox.Invalidate();
 
             if (!Enabled)
@@ -783,6 +815,12 @@ namespace Nikse.SubtitleEdit.Controls
             {
                 var borderRectangle = new Rectangle(0, 0, Width - 1, Height - 1);
                 e.Graphics.DrawRectangle(pen, borderRectangle);
+            }
+
+            if (_stepperButtons)
+            {
+                DrawStepper(e, false);
+                return;
             }
 
             var brush = _buttonForeColorBrush;
@@ -854,6 +892,12 @@ namespace Nikse.SubtitleEdit.Controls
                 e.Graphics.DrawRectangle(pen, borderRectangle);
             }
 
+            if (_stepperButtons)
+            {
+                DrawStepper(e, true);
+                return;
+            }
+
             var left = RightToLeft == RightToLeft.Yes ? 3 : Width - ButtonsWidth;
             var height = Height / 2 - 4;
             var top = 2;
@@ -863,6 +907,40 @@ namespace Nikse.SubtitleEdit.Controls
                 top = height + 5;
                 NikseUpDown.DrawArrowDown(e.Graphics, brush, left, top, height);
             }
+        }
+
+        /// <summary>
+        /// Lanes fork: paint the minus/plus stepper. Minus on the left half, plus on the right, each
+        /// the full height of the control. Hover and pressed states reuse the existing brushes so
+        /// the control still follows the light and dark themes.
+        /// </summary>
+        private void DrawStepper(PaintEventArgs e, bool disabled)
+        {
+            var zoneLeft = RightToLeft == RightToLeft.Yes ? 0 : Width - NikseUpDown.StepperZoneWidth;
+            var half = NikseUpDown.StepperZoneWidth / 2;
+
+            NikseUpDown.DrawStepperDividers(e.Graphics, disabled ? BorderColorDisabled : BorderColor, zoneLeft, Height);
+
+            if (disabled)
+            {
+                using (var brush = new SolidBrush(BorderColorDisabled))
+                {
+                    NikseUpDown.DrawMinus(e.Graphics, brush, zoneLeft, 0, half, Height);
+                    NikseUpDown.DrawPlus(e.Graphics, brush, zoneLeft + half, 0, half, Height);
+                }
+
+                return;
+            }
+
+            var minusBrush = _buttonDownActive
+                ? (_buttonLeftIsDown ? _buttonForeColorDownBrush : _buttonForeColorOverBrush)
+                : _buttonForeColorBrush;
+            var plusBrush = _buttonUpActive
+                ? (_buttonLeftIsDown ? _buttonForeColorDownBrush : _buttonForeColorOverBrush)
+                : _buttonForeColorBrush;
+
+            NikseUpDown.DrawMinus(e.Graphics, minusBrush, zoneLeft, 0, half, Height);
+            NikseUpDown.DrawPlus(e.Graphics, plusBrush, zoneLeft + half, 0, half, Height);
         }
 
         private static char[] GetSplitChars()

@@ -35405,6 +35405,18 @@ namespace Nikse.SubtitleEdit.Forms
         /// </summary>
         private void InitializeTimeStepCombo()
         {
+            // Lanes fork: minus/plus stepper buttons on the two spinners that get nudged constantly
+            // while timing stacked lines. The stacked arrows sat in a 13px zone split top and bottom,
+            // giving each a 7x11px target; these are half a 42px zone wide and the full height of
+            // the control. Opt-in per control, so every other spinner in the application is
+            // untouched. Both controls grow by the extra zone width so their text still fits.
+            timeUpDownStartTime.StepperButtons = true;
+            numericUpDownDuration.StepperButtons = true;
+            timeUpDownStartTime.Width += NikseUpDown.StepperZoneWidth - 13;
+            numericUpDownDuration.Width += NikseUpDown.StepperZoneWidth - 13;
+            numericUpDownDuration.Left = timeUpDownStartTime.Right + 1;
+            labelDuration.Left = numericUpDownDuration.Left;
+
             _labelTimeStep = new Label
             {
                 Name = "labelTimeStep",
@@ -35418,8 +35430,8 @@ namespace Nikse.SubtitleEdit.Forms
                 DropDownStyle = ComboBoxStyle.DropDownList,
             };
 
-            _comboBoxTimeStep.Items.Add("0.10");
-            _comboBoxTimeStep.Items.Add("0.05");
+            _comboBoxTimeStep.Items.Add("100ms");
+            _comboBoxTimeStep.Items.Add("50ms");
             _comboBoxTimeStep.SelectedIndex = Configuration.Settings.General.TimeUpDownStepMilliseconds == 50 ? 1 : 0;
             _comboBoxTimeStep.SelectedIndexChanged += ComboBoxTimeStepSelectedIndexChanged;
 
@@ -35463,7 +35475,17 @@ namespace Nikse.SubtitleEdit.Forms
                 return numericUpDownDuration.Right + 9;
             }
 
-            _comboBoxTimeStep.Width = numericUpDownDuration.Width;
+            // Lanes fork: size to the widest item rather than copying the duration box, which is
+            // wide because it holds a stepper. Measuring with the control's own font keeps this
+            // correct across DPI and font-size changes instead of pinning a pixel count. The
+            // trailing allowance covers NikseComboBox's 13px arrow zone plus text padding.
+            var widest = 0;
+            foreach (var item in _comboBoxTimeStep.Items)
+            {
+                widest = Math.Max(widest, TextRenderer.MeasureText(item.ToString(), _comboBoxTimeStep.Font).Width);
+            }
+
+            _comboBoxTimeStep.Width = widest + 22;
             _comboBoxTimeStep.Top = numericUpDownDuration.Top;
             _comboBoxTimeStep.Left = numericUpDownDuration.Right + 6;
             _comboBoxTimeStep.Height = numericUpDownDuration.Height;

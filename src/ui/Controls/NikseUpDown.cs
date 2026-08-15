@@ -538,8 +538,8 @@ namespace Nikse.SubtitleEdit.Controls
 
         protected override void OnMouseMove(MouseEventArgs e)
         {
-            var left = RightToLeft == RightToLeft.Yes ? 0 : Width - ButtonsWidth;
-            var right = RightToLeft == RightToLeft.Yes ? ButtonsWidth : Width;
+            var left = RightToLeft == RightToLeft.Yes ? 0 : Width - ButtonsZoneWidth;
+            var right = RightToLeft == RightToLeft.Yes ? ButtonsZoneWidth : Width;
             var height = Height / 2 - 3;
             const int top = 2;
 
@@ -548,7 +548,15 @@ namespace Nikse.SubtitleEdit.Controls
 
             if (_mouseX >= left && _mouseX <= right)
             {
-                if (_mouseY > top + height)
+                // Lanes fork: the stepper splits its zone left/right rather than top/bottom, and
+                // both halves run the full height of the control, so only X decides which is hit.
+                // _buttonDownActive is minus, _buttonUpActive is plus - reusing those flags keeps
+                // OnMouseDown, the repeat timer and the pressed states working unchanged.
+                var wantDown = _stepperButtons
+                    ? _mouseX < left + StepperZoneWidth / 2
+                    : _mouseY > top + height;
+
+                if (wantDown)
                 {
                     if (!_buttonDownActive)
                     {
@@ -583,6 +591,25 @@ namespace Nikse.SubtitleEdit.Controls
 
         private const int ButtonsWidth = 13;
 
+        /// <summary>
+        /// Lanes fork: opt in to the two-button minus/plus stepper instead of the stacked arrows.
+        /// Off by default so every other spinner in the application is untouched.
+        /// </summary>
+        [RefreshProperties(RefreshProperties.Repaint)]
+        public bool StepperButtons
+        {
+            get => _stepperButtons;
+            set
+            {
+                _stepperButtons = value;
+                Invalidate();
+            }
+        }
+
+        private bool _stepperButtons;
+
+        private int ButtonsZoneWidth => _stepperButtons ? StepperZoneWidth : ButtonsWidth;
+
         public new bool Enabled
         {
             get => base.Enabled;
@@ -600,9 +627,9 @@ namespace Nikse.SubtitleEdit.Controls
             _textBox.BackColor = BackColor;
             _textBox.ForeColor = ButtonForeColor;
             _textBox.Top = 2;
-            _textBox.Left = RightToLeft == RightToLeft.Yes ? ButtonsWidth : 3;
+            _textBox.Left = RightToLeft == RightToLeft.Yes ? ButtonsZoneWidth : 3;
             _textBox.Height = Height - 4;
-            _textBox.Width = Width - ButtonsWidth - 3;
+            _textBox.Width = Width - ButtonsZoneWidth - 3;
             _textBox.Invalidate();
             if (!_dirty)
             {
@@ -620,6 +647,12 @@ namespace Nikse.SubtitleEdit.Controls
             {
                 var borderRectangle = new Rectangle(0, 0, Width - 1, Height - 1);
                 e.Graphics.DrawRectangle(pen, borderRectangle);
+            }
+
+            if (_stepperButtons)
+            {
+                DrawStepper(e, false);
+                return;
             }
 
             var brush = _buttonForeColorBrush;
@@ -723,9 +756,45 @@ namespace Nikse.SubtitleEdit.Controls
             _textBox.SelectionStart = selectionStart;
         }
 
-        public static void DrawArrowUp(Graphics g, Brush brush, int left, int top, int height)
+        /// <summary>
+        /// Lanes fork: width of the two-button stepper zone. Each button is half of this and the
+        /// full height of the control, giving roughly eight times the click target of the stacked
+        /// 13px arrows it replaces.
+        /// </summary>
+        public const int StepperZoneWidth = 42;
+
+        /// <summary>
+        /// Lanes fork: hairline at the left edge of the stepper zone and between the two buttons,
+        /// so the halves read as separate buttons rather than one block of chrome.
+        /// </summary>
+        public static void DrawStepperDividers(Graphics g, Color borderColor, int zoneLeft, int height)
         {
-            g.FillPolygon(brush,
+            using (var pen = new Pen(borderColor, 1f))
+            {
+                g.DrawLine(pen, zoneLeft, 1, zoneLeft, height - 2);
+                g.DrawLine(pen, zoneLeft + StepperZoneWidth / 2, 1, zoneLeft + StepperZoneWidth / 2, height - 2);
+            }
+        }
+
+        public static void DrawMinus(Graphics g, Brush brush, int left, int top, int width, int height)
+        {
+            var thickness = Math.Max(2, height / 9);
+            var barWidth = Math.Max(8, width / 2);
+            g.FillRectangle(brush, left + (width - barWidth) / 2, top + (height - thickness) / 2, barWidth, thickness);
+        }
+
+        public static void DrawPlus(Graphics g, Brush brush, int left, int top, int width, int height)
+        {
+            var thickness = Math.Max(2, height / 9);
+            var barWidth = Math.Max(8, width / 2);
+            var cx = left + width / 2;
+            var cy = top + height / 2;
+            g.FillRectangle(brush, cx - barWidth / 2, cy - thickness / 2, barWidth, thickness);
+            g.FillRectangle(brush, cx - thickness / 2, cy - barWidth / 2, thickness, barWidth);
+        }
+
+        public static void DrawArrowUp(Graphics g, Brush brush, int left, int top, int height)
+        {            g.FillPolygon(brush,
                 new[]
                 {
                     // arrow head
@@ -764,6 +833,12 @@ namespace Nikse.SubtitleEdit.Controls
                 e.Graphics.DrawRectangle(pen, borderRectangle);
             }
 
+            if (_stepperButtons)
+            {
+                DrawStepper(e, true);
+                return;
+            }
+
             var left = RightToLeft == RightToLeft.Yes ? 3 : Width - ButtonsWidth;
             var height = Height / 2 - 4;
             var top = 2;
@@ -773,6 +848,40 @@ namespace Nikse.SubtitleEdit.Controls
                 top = height + 5;
                 DrawArrowDown(e.Graphics, brush, left, top, height);
             }
+        }
+
+        /// <summary>
+        /// Lanes fork: paint the minus/plus stepper. Minus sits on the left half, plus on the right,
+        /// each the full height of the control. Hover and pressed states reuse the existing brushes
+        /// so the control still follows the light and dark themes.
+        /// </summary>
+        private void DrawStepper(PaintEventArgs e, bool disabled)
+        {
+            var zoneLeft = RightToLeft == RightToLeft.Yes ? 0 : Width - StepperZoneWidth;
+            var half = StepperZoneWidth / 2;
+
+            DrawStepperDividers(e.Graphics, disabled ? BorderColorDisabled : BorderColor, zoneLeft, Height);
+
+            if (disabled)
+            {
+                using (var brush = new SolidBrush(BorderColorDisabled))
+                {
+                    DrawMinus(e.Graphics, brush, zoneLeft, 0, half, Height);
+                    DrawPlus(e.Graphics, brush, zoneLeft + half, 0, half, Height);
+                }
+
+                return;
+            }
+
+            var minusBrush = _buttonDownActive
+                ? (_buttonLeftIsDown ? _buttonForeColorDownBrush : _buttonForeColorOverBrush)
+                : _buttonForeColorBrush;
+            var plusBrush = _buttonUpActive
+                ? (_buttonLeftIsDown ? _buttonForeColorDownBrush : _buttonForeColorOverBrush)
+                : _buttonForeColorBrush;
+
+            DrawMinus(e.Graphics, minusBrush, zoneLeft, 0, half, Height);
+            DrawPlus(e.Graphics, plusBrush, zoneLeft + half, 0, half, Height);
         }
     }
 }
