@@ -206,6 +206,7 @@ namespace Nikse.SubtitleEdit.Core.Settings
         public bool SplitRemovesDashes { get; set; }
         public bool SplitAtSentenceBoundary { get; set; }
         public bool OriginalPairByStyle { get; set; }
+        public int TimeUpDownStepMilliseconds { get; set; }
         public int ClearStatusBarAfterSeconds { get; set; }
         public string Company { get; set; }
         public bool MoveVideo100Or500MsPlaySmallSample { get; set; }
@@ -397,6 +398,7 @@ namespace Nikse.SubtitleEdit.Core.Settings
             SplitRemovesDashes = true;
             SplitAtSentenceBoundary = true; // Lanes fork: split text at sentence boundary nearest the split position
             OriginalPairByStyle = true; // Lanes fork: pair working/original lines within the same ASSA style (track)
+            TimeUpDownStepMilliseconds = 100; // Lanes fork: step for the start time / duration arrows, 100 or 50
             ClearStatusBarAfterSeconds = 10;
             MoveVideo100Or500MsPlaySmallSample = false;
             DisableVideoAutoLoading = false;

@@ -174,6 +174,11 @@ namespace Nikse.SubtitleEdit.Forms
         private string _copiedParagraphsClipboardText;
         private List<Paragraph> _copiedParagraphs;
 
+        // Lanes fork: step selector for the start time / duration arrows, see
+        // InitializeTimeStepCombo.
+        private NikseComboBox _comboBoxTimeStep;
+        private Label _labelTimeStep;
+
         private CheckForUpdatesHelper _checkForUpdatesHelper;
         private Timer _timerCheckForUpdates;
 
@@ -404,6 +409,7 @@ namespace Nikse.SubtitleEdit.Forms
 
                 _contextMenuStripPlayRate = new ContextMenuStrip();
                 InitializeDuplicateAsStyleMenu();
+                InitializeTimeStepCombo();
                 SetLanguage(Configuration.Settings.General.Language);
                 toolStripStatusNetworking.Visible = false;
                 labelTextLineLengths.Text = string.Empty;
@@ -25564,7 +25570,7 @@ namespace Nikse.SubtitleEdit.Forms
 
             var tbText = textBoxListViewText;
             var tbOriginal = textBoxListViewTextOriginal;
-            int firstLeft = numericUpDownDuration.Right + 9;
+            int firstLeft = GetEditBoxFirstLeft();
 
             var lbText = labelText;
             var lbTextOriginal = labelOriginalText;
@@ -27153,6 +27159,11 @@ namespace Nikse.SubtitleEdit.Forms
             MainResize();
             _loading = false;
 
+            // Lanes fork: the MainResize above is a no-op because it returns early while _loading is
+            // set. Run it once more now that the flag is clear, so the step combo and the text
+            // column it shifts get positioned without waiting for the first resize event.
+            MainResize();
+
             LayoutManager.MainSplitContainer = splitContainerMain;
             _layout = Configuration.Settings.General.LayoutNumber;
             if (_layout != 0)
@@ -27238,8 +27249,14 @@ namespace Nikse.SubtitleEdit.Forms
             if (numericUpDownDuration.Left + numericUpDownDuration.Width > textBoxListViewText.Left)
             {
                 numericUpDownDuration.Left = timeUpDownStartTime.Left + timeUpDownStartTime.Width + 5;
-                numericUpDownDuration.Width = textBoxListViewText.Left - numericUpDownDuration.Left - 5;
+
+                // Lanes fork: the step combo sits between the duration box and the text box, so
+                // measure the gap to the combo rather than to the text box - otherwise this widens
+                // the duration box straight over the top of it.
+                var rightEdge = _comboBoxTimeStep != null ? _comboBoxTimeStep.Left : textBoxListViewText.Left;
+                numericUpDownDuration.Width = rightEdge - numericUpDownDuration.Left - 5;
                 labelDuration.Left = numericUpDownDuration.Left;
+                MainResize();
             }
 
             if (string.IsNullOrEmpty(_fileName) && (_subtitle == null || _subtitle.Paragraphs.Count == 0))
@@ -35359,6 +35376,88 @@ namespace Nikse.SubtitleEdit.Forms
                     ShowSourceLineNumber();
                 }
             }
+        }
+
+        /// <summary>
+        /// Lanes fork: step selector for the start time and duration arrows.
+        ///
+        /// Both spinners were fixed at 100 ms, which is too coarse for nudging stacked overlapping
+        /// lines apart. 50 ms is the useful finer step: ASS time codes are centiseconds, so 50 ms is
+        /// 5 cs and survives saving exactly, whereas anything under 10 ms would be rounded away by
+        /// AdvancedSubStationAlpha.MakeTimeCode and never reach the file.
+        ///
+        /// Built at runtime so Main.Designer.cs stays untouched. Placement is handled by MainResize,
+        /// which already derives every control right of the duration box from a single firstLeft.
+        /// </summary>
+        private void InitializeTimeStepCombo()
+        {
+            _labelTimeStep = new Label
+            {
+                Name = "labelTimeStep",
+                AutoSize = true,
+                Text = "Step",
+            };
+
+            _comboBoxTimeStep = new NikseComboBox
+            {
+                Name = "comboBoxTimeStep",
+                DropDownStyle = ComboBoxStyle.DropDownList,
+            };
+
+            _comboBoxTimeStep.Items.Add("0.10");
+            _comboBoxTimeStep.Items.Add("0.05");
+            _comboBoxTimeStep.SelectedIndex = Configuration.Settings.General.TimeUpDownStepMilliseconds == 50 ? 1 : 0;
+            _comboBoxTimeStep.SelectedIndexChanged += ComboBoxTimeStepSelectedIndexChanged;
+
+            groupBoxEdit.Controls.Add(_labelTimeStep);
+            groupBoxEdit.Controls.Add(_comboBoxTimeStep);
+            UiUtil.FixFonts(_labelTimeStep);
+            UiUtil.FixFonts(_comboBoxTimeStep);
+
+            ApplyTimeStep();
+        }
+
+        private void ComboBoxTimeStepSelectedIndexChanged(object sender, EventArgs e)
+        {
+            Configuration.Settings.General.TimeUpDownStepMilliseconds = _comboBoxTimeStep.SelectedIndex == 1 ? 50 : 100;
+            ApplyTimeStep();
+        }
+
+        private void ApplyTimeStep()
+        {
+            var ms = Configuration.Settings.General.TimeUpDownStepMilliseconds;
+            if (ms < 10)
+            {
+                ms = 10; // below one centisecond the step cannot survive an ASS save
+            }
+
+            // NikseTimeUpDown.Increment is in milliseconds; numericUpDownDuration is in seconds.
+            timeUpDownStartTime.Increment = ms;
+            numericUpDownDuration.Increment = ms / 1000m;
+        }
+
+        /// <summary>
+        /// Lanes fork: place the step selector between the duration box and the text box, and report
+        /// where the text column now starts. MainResize positions labelText, both text boxes and
+        /// every counter label from this one value, so widening the left column is a matter of
+        /// returning a larger number rather than moving controls individually.
+        /// </summary>
+        private int GetEditBoxFirstLeft()
+        {
+            if (_comboBoxTimeStep == null)
+            {
+                return numericUpDownDuration.Right + 9;
+            }
+
+            _comboBoxTimeStep.Width = numericUpDownDuration.Width;
+            _comboBoxTimeStep.Top = numericUpDownDuration.Top;
+            _comboBoxTimeStep.Left = numericUpDownDuration.Right + 6;
+            _comboBoxTimeStep.Height = numericUpDownDuration.Height;
+
+            _labelTimeStep.Top = labelDuration.Top;
+            _labelTimeStep.Left = _comboBoxTimeStep.Left;
+
+            return _comboBoxTimeStep.Right + 9;
         }
 
         /// <summary>
