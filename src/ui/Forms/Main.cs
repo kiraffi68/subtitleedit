@@ -14434,7 +14434,21 @@ namespace Nikse.SubtitleEdit.Forms
 
                 comboBoxSpeakerTag.Top = numericUpDownLayer.Top;
                 comboBoxSpeakerTag.Left = numericUpDownLayer.Right + 9;
-                comboBoxSpeakerTag.Width = Math.Max(55, Math.Min(130, textBoxListViewText.Left - comboBoxSpeakerTag.Left - 9));
+
+                // Lanes fork: the "+" applies whatever tag the combo is showing, so it belongs
+                // beside the combo rather than stranded at the end of the Prev/Next row where the
+                // designer left it. Widening the left column for the step selector freed enough
+                // room on this row to fit both; reserve the button's width out of the space before
+                // the text column starts, then hang it off the combo's right edge.
+                const int applyGap = 3;
+                var speakerTagRoom = textBoxListViewText.Left - comboBoxSpeakerTag.Left - 9 -
+                                     buttonApplySpeakerTag.Width - applyGap;
+                comboBoxSpeakerTag.Width = Math.Max(55, Math.Min(130, speakerTagRoom));
+
+                buttonApplySpeakerTag.Left = comboBoxSpeakerTag.Right + applyGap;
+                buttonApplySpeakerTag.Top = comboBoxSpeakerTag.Top +
+                                            (comboBoxSpeakerTag.Height - buttonApplySpeakerTag.Height) / 2;
+
                 if (!ReferenceEquals(_speakerTagComboHeader, _subtitle.Header))
                 {
                     PopulateSpeakerTagCombo();
