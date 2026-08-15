@@ -434,3 +434,4 @@ FodyWeavers.xsd
 *.sln.iml
 /.claude
 /installer/flatpak
+patches/ 
