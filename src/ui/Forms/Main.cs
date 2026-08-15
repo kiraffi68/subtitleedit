@@ -22668,6 +22668,10 @@ namespace Nikse.SubtitleEdit.Forms
                                 {
                                     _subtitleOriginal.InsertParagraphInCorrectTimeOrder(new Paragraph(string.Empty, p.StartTime.TotalMilliseconds, p.EndTime.TotalMilliseconds) { Extra = p.Extra, Style = p.Style });
                                 }
+                                else
+                                {
+                                    InsertClonedOriginalCompanion(p, original, firstIndex + i + 1);
+                                }
                             }
                         }
 
@@ -22694,6 +22698,10 @@ namespace Nikse.SubtitleEdit.Forms
                                 if (original == null)
                                 {
                                     _subtitleOriginal.InsertParagraphInCorrectTimeOrder(new Paragraph(string.Empty, p.StartTime.TotalMilliseconds, p.EndTime.TotalMilliseconds) { Extra = p.Extra, Style = p.Style });
+                                }
+                                else
+                                {
+                                    InsertClonedOriginalCompanion(p, original, _subtitle.Paragraphs.Count - 1);
                                 }
                             }
                         }
@@ -22725,6 +22733,10 @@ namespace Nikse.SubtitleEdit.Forms
                                     if (original == null)
                                     {
                                         _subtitleOriginal.InsertParagraphInCorrectTimeOrder(new Paragraph(string.Empty, p.StartTime.TotalMilliseconds, p.EndTime.TotalMilliseconds) { Extra = p.Extra, Style = p.Style });
+                                    }
+                                    else
+                                    {
+                                        InsertClonedOriginalCompanion(p, original, idx);
                                     }
                                 }
 
@@ -35347,6 +35359,70 @@ namespace Nikse.SubtitleEdit.Forms
                     ShowSourceLineNumber();
                 }
             }
+        }
+
+        /// <summary>
+        /// Lanes fork: give a pasted duplicate its own paragraph in the original track.
+        ///
+        /// GetOriginalParagraph matches on time with a 50 ms tolerance, so a pasted copy resolves
+        /// to the very same original paragraph its source is already using. Both working lines then
+        /// write through to one object: editing either changes both, and on save the original file
+        /// ends up short by however many copies were made. Only the row being edited repaints, so
+        /// the grid hides this - the sharing is visible only in the original text box.
+        ///
+        /// Cloning is deliberately narrow. It fires only when the pasted line exactly duplicates the
+        /// times of a line already in the working file AND the companion's own times match exactly,
+        /// which is the signature of a duplicate rather than a paste landing inside some longer
+        /// original's span. A translation whose timings differ from the working file therefore keeps
+        /// the old shared behaviour rather than gaining spurious copies.
+        /// </summary>
+        private void InsertClonedOriginalCompanion(Paragraph pasted, Paragraph original, int workingIndex)
+        {
+            if (original == null || pasted == null)
+            {
+                return;
+            }
+
+            if (!IsSameTimeCode(original, pasted) || !HasOtherLineWithSameTimeCodes(pasted))
+            {
+                return;
+            }
+
+            var clone = NewOriginalTrackParagraph(original, original);
+
+            // Position matters as much as existence. Two originals with the same style and the same
+            // times are indistinguishable to the time-based matcher; the only thing that separates
+            // them is GetOriginalParagraph's index hint, which checks originalParagraphs[index]
+            // first. Inserting at the working paragraph's own index keeps the two lists in step so
+            // that hint lands on the clone. Inserting "in correct time order" would not: with equal
+            // times the clone could sort either side of its source and the hint would miss.
+            if (workingIndex >= 0 && workingIndex <= _subtitleOriginal.Paragraphs.Count)
+            {
+                _subtitleOriginal.Paragraphs.Insert(workingIndex, clone);
+            }
+            else
+            {
+                _subtitleOriginal.Paragraphs.Add(clone);
+            }
+        }
+
+        private static bool IsSameTimeCode(Paragraph a, Paragraph b)
+        {
+            return Math.Abs(a.StartTime.TotalMilliseconds - b.StartTime.TotalMilliseconds) < 0.001 &&
+                   Math.Abs(a.EndTime.TotalMilliseconds - b.EndTime.TotalMilliseconds) < 0.001;
+        }
+
+        private bool HasOtherLineWithSameTimeCodes(Paragraph p)
+        {
+            foreach (var other in _subtitle.Paragraphs)
+            {
+                if (!ReferenceEquals(other, p) && IsSameTimeCode(other, p))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>
