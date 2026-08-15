@@ -165,6 +165,15 @@ namespace Nikse.SubtitleEdit.Forms
         private readonly Timer _timerSlow = new Timer();
         private readonly ContextMenuStrip _contextMenuStripPlayRate;
 
+        // Lanes fork: created in the constructor rather than the designer, see
+        // InitializeDuplicateAsStyleMenu.
+        private ToolStripMenuItem _duplicateAsStyleToolStripMenuItem;
+
+        // Lanes fork: the paragraphs behind the text we last put on the clipboard, kept so an
+        // in-app paste can restore exact times. See RememberCopiedParagraphs.
+        private string _copiedParagraphsClipboardText;
+        private List<Paragraph> _copiedParagraphs;
+
         private CheckForUpdatesHelper _checkForUpdatesHelper;
         private Timer _timerCheckForUpdates;
 
@@ -394,6 +403,7 @@ namespace Nikse.SubtitleEdit.Forms
                 labelNextWord.Visible = false;
 
                 _contextMenuStripPlayRate = new ContextMenuStrip();
+                InitializeDuplicateAsStyleMenu();
                 SetLanguage(Configuration.Settings.General.Language);
                 toolStripStatusNetworking.Visible = false;
                 labelTextLineLengths.Text = string.Empty;
@@ -9328,6 +9338,11 @@ namespace Nikse.SubtitleEdit.Forms
             toolStripMenuItemSetRegion.Visible = false;
             toolStripMenuItemSetLanguage.Visible = false;
             toolStripMenuItemSetLayer.Visible = false;
+
+            // Lanes fork: hidden by default; the ASSA/SSA branch below turns it back on. Assign
+            // rather than read - ToolStripItem.Visible reports on-screen state, not the last value
+            // set, so it is not safe to test.
+            _duplicateAsStyleToolStripMenuItem.Visible = false;
             List<string> actors = null;
             if ((formatType == typeof(AdvancedSubStationAlpha) || formatType == typeof(SubStationAlpha) || formatType == typeof(CsvNuendo) || formatType == typeof(PodcastIndexer)) && SubtitleListview1.SelectedItems.Count > 0)
             {
@@ -9359,6 +9374,22 @@ namespace Nikse.SubtitleEdit.Forms
                     {
                         ((ToolStripMenuItem)setStylesForSelectedLinesToolStripMenuItem.DropDownItems[setStylesForSelectedLinesToolStripMenuItem.DropDownItems.Count - 1]).Checked = true;
                     }
+                }
+
+                // Lanes fork: same filtered style list, but each entry duplicates the selected
+                // lines and assigns the style to the copies in one pass. Rebuilt on open like the
+                // submenu above, so it tracks header edits without extra bookkeeping.
+                _duplicateAsStyleToolStripMenuItem.DropDownItems.Clear();
+                foreach (var style in menuStyles)
+                {
+                    _duplicateAsStyleToolStripMenuItem.DropDownItems.Add(style, null, DuplicateAsStyleClick);
+                }
+
+                var showDuplicateAsStyle = formatType == typeof(AdvancedSubStationAlpha) && menuStyles.Count > 0;
+                _duplicateAsStyleToolStripMenuItem.Visible = showDuplicateAsStyle;
+                if (showDuplicateAsStyle)
+                {
+                    UiUtil.FixFonts(_duplicateAsStyleToolStripMenuItem);
                 }
 
                 toolStripMenuItemAssStyles.Visible = true;
@@ -18257,8 +18288,9 @@ namespace Nikse.SubtitleEdit.Forms
                 UiUtil.OpenFolder(Configuration.DataDirectory);
                 e.SuppressKeyPress = true;
             }
-            else if (_shortcuts.MainGeneralDuplicateLine == e.KeyData && SubtitleListview1.SelectedItems.Count == 1)
+            else if (_shortcuts.MainGeneralDuplicateLine == e.KeyData && SubtitleListview1.SelectedItems.Count > 0)
             {
+                // Lanes fork: was gated to a single line; DuplicateSelectedLines handles any number.
                 DuplicateLine();
                 e.SuppressKeyPress = true;
             }
@@ -22419,15 +22451,19 @@ namespace Nikse.SubtitleEdit.Forms
                         tmp.AddTimeToAllParagraphs(TimeSpan.FromMilliseconds(Configuration.Settings.General.CurrentVideoOffsetInMs));
                     }
 
+                    string clipboardText;
                     if (IsAssa())
                     {
                         tmp.Header = _subtitle.Header;
-                        ClipboardSetText(tmp.ToText(new AdvancedSubStationAlpha()).TrimEnd());
+                        clipboardText = tmp.ToText(new AdvancedSubStationAlpha()).TrimEnd();
                     }
                     else
                     {
-                        ClipboardSetText(tmp.ToText(new SubRip()).TrimEnd());
+                        clipboardText = tmp.ToText(new SubRip()).TrimEnd();
                     }
+
+                    ClipboardSetText(clipboardText);
+                    RememberCopiedParagraphs(clipboardText, tmp.Paragraphs);
                 }
 
                 e.SuppressKeyPress = true;
@@ -22581,6 +22617,7 @@ namespace Nikse.SubtitleEdit.Forms
                         format = new AdvancedSubStationAlpha();
                     }
                     format.LoadSubtitle(tmp, list, null);
+                    RestoreCopiedParagraphTimes(text, tmp.Paragraphs);
                     if (SubtitleListview1.SelectedItems.Count == 1 && tmp.Paragraphs.Count > 0)
                     {
                         MakeHistoryForUndo(_language.BeforeInsertLine);
@@ -31253,7 +31290,9 @@ namespace Nikse.SubtitleEdit.Forms
                 selectedLines.AddTimeToAllParagraphs(TimeSpan.FromMilliseconds(Configuration.Settings.General.CurrentVideoOffsetInMs));
             }
 
-            ClipboardSetText(selectedLines.ToText(GetCurrentSubtitleFormat()).TrimEnd());
+            var clipboardText = selectedLines.ToText(GetCurrentSubtitleFormat()).TrimEnd();
+            ClipboardSetText(clipboardText);
+            RememberCopiedParagraphs(clipboardText, selectedLines.Paragraphs);
         }
 
         public void SetEndMinusGapAndStartNextHere(int index)
@@ -35310,52 +35349,259 @@ namespace Nikse.SubtitleEdit.Forms
             }
         }
 
-        private void DuplicateLine()
+        /// <summary>
+        /// Lanes fork: stash the paragraphs behind the text just placed on the clipboard.
+        ///
+        /// The clipboard itself has to stay valid ASS for the benefit of other applications, and
+        /// ASS time codes are centiseconds - MakeTimeCode does Math.Round(Milliseconds / 10.0) on
+        /// the way out, GetTimeCodeFromString multiplies by 10 on the way back in. Round-tripping
+        /// therefore snapped every start and end to the nearest 10 ms boundary, quietly de-syncing
+        /// pasted duplicates from their source by up to 5 ms. Keeping the objects lets a paste that
+        /// is still looking at our own text put the original doubles back.
+        /// </summary>
+        private void RememberCopiedParagraphs(string clipboardText, List<Paragraph> paragraphs)
         {
-            if (SubtitleListview1.SelectedItems.Count != 1)
+            if (string.IsNullOrEmpty(clipboardText) || paragraphs == null || paragraphs.Count == 0)
+            {
+                _copiedParagraphsClipboardText = null;
+                _copiedParagraphs = null;
+                return;
+            }
+
+            _copiedParagraphsClipboardText = clipboardText;
+            _copiedParagraphs = new List<Paragraph>(paragraphs.Count);
+            foreach (var p in paragraphs)
+            {
+                _copiedParagraphs.Add(new Paragraph(p));
+            }
+        }
+
+        /// <summary>
+        /// Lanes fork: counterpart to RememberCopiedParagraphs. If the clipboard still holds the
+        /// exact text we wrote, and it parsed back to the same number of paragraphs, overwrite the
+        /// re-parsed centisecond times with the millisecond originals. Any other clipboard content -
+        /// another application, another Subtitle Edit window, a hand-edited paste - falls through
+        /// untouched and is parsed normally.
+        /// </summary>
+        private void RestoreCopiedParagraphTimes(string clipboardText, List<Paragraph> parsed)
+        {
+            if (_copiedParagraphs == null || _copiedParagraphsClipboardText == null ||
+                parsed == null || parsed.Count != _copiedParagraphs.Count)
             {
                 return;
             }
 
-            var firstSelectedIndex = SubtitleListview1.SelectedItems[0].Index;
-            MakeHistoryForUndo(_language.BeforeInsertLine);
-            var newParagraph = new Paragraph();
-            SetStyleForNewParagraph(newParagraph, firstSelectedIndex);
-            var cur = _subtitle.GetParagraphOrDefault(firstSelectedIndex);
-            newParagraph.StartTime.TotalMilliseconds = cur.StartTime.TotalMilliseconds;
-            newParagraph.EndTime.TotalMilliseconds = cur.EndTime.TotalMilliseconds;
-            newParagraph.Text = cur.Text;
-
-            if (Configuration.Settings.General.AllowEditOfOriginalSubtitle && _subtitleOriginal != null && _subtitleOriginal.Paragraphs.Count > 0)
+            if (clipboardText == null ||
+                !string.Equals(clipboardText.TrimEnd(), _copiedParagraphsClipboardText.TrimEnd(), StringComparison.Ordinal))
             {
-                var currentOriginal = Utilities.GetOriginalParagraph(firstSelectedIndex, _subtitle.Paragraphs[firstSelectedIndex], _subtitleOriginal.Paragraphs);
-                if (currentOriginal != null)
+                return;
+            }
+
+            for (int i = 0; i < parsed.Count; i++)
+            {
+                parsed[i].StartTime.TotalMilliseconds = _copiedParagraphs[i].StartTime.TotalMilliseconds;
+                parsed[i].EndTime.TotalMilliseconds = _copiedParagraphs[i].EndTime.TotalMilliseconds;
+            }
+        }
+
+        private void DuplicateLine()
+        {
+            DuplicateSelectedLines(null);
+        }
+
+        /// <summary>
+        /// Lanes fork: duplicate every selected line by cloning Paragraph objects directly, instead
+        /// of routing the selection through the clipboard.
+        ///
+        /// Ctrl+C on an ASSA file serializes the selection to ASS text, and ASS time codes are
+        /// centiseconds - AdvancedSubStationAlpha.MakeTimeCode does Math.Round(Milliseconds / 10.0)
+        /// on the way out and GetTimeCodeFromString multiplies by 10 on the way back in. Any time
+        /// not already sitting on a 10 ms boundary therefore returned displaced by up to 5 ms, which
+        /// silently de-synced duplicated lines from their source. Paragraph's copy constructor
+        /// carries TotalMilliseconds across as a double, so these copies are bit-exact.
+        ///
+        /// When overrideStyle is set the copies also take that ASSA style, collapsing the
+        /// duplicate-then-restyle step of dual-language song subtitles into a single action.
+        /// </summary>
+        private void DuplicateSelectedLines(string overrideStyle)
+        {
+            if (_subtitle == null || SubtitleListview1.SelectedIndices.Count == 0)
+            {
+                return;
+            }
+
+            // Resolve the selection to paragraph references before touching the list. Every insert
+            // shifts the indices after it, so indices captured up front go stale as we work through
+            // them; references do not.
+            var sources = new List<Paragraph>();
+            foreach (int index in SubtitleListview1.SelectedIndices)
+            {
+                var p = _subtitle.GetParagraphOrDefault(index);
+                if (p != null)
                 {
-                    _subtitleOriginal.Paragraphs.Insert(_subtitleOriginal.Paragraphs.IndexOf(currentOriginal) + 1, NewOriginalTrackParagraph(currentOriginal, currentOriginal));
+                    sources.Add(p);
+                }
+            }
+
+            if (sources.Count == 0)
+            {
+                return;
+            }
+
+            MakeHistoryForUndo(_language.BeforeInsertLine);
+
+            var pairOriginals = Configuration.Settings.General.AllowEditOfOriginalSubtitle &&
+                                _subtitleOriginal != null && _subtitleOriginal.Paragraphs.Count > 0;
+
+            // Only stamp the chosen style onto the original track when that track's own header
+            // actually defines it. NewOriginalTrackParagraph exists precisely to keep working-file
+            // style names out of the original file; this is the one case where copying the name
+            // across is correct, because style-aware pairing needs both sides to agree.
+            var applyStyleToOriginal = false;
+            if (pairOriginals && !string.IsNullOrEmpty(overrideStyle))
+            {
+                applyStyleToOriginal = AdvancedSubStationAlpha
+                    .GetStylesFromHeader(_subtitleOriginal.Header)
+                    .Any(s => s.Equals(overrideStyle, StringComparison.OrdinalIgnoreCase));
+            }
+
+            var inserted = new List<Paragraph>();
+            foreach (var source in sources)
+            {
+                var sourceIndex = _subtitle.Paragraphs.IndexOf(source);
+                if (sourceIndex < 0)
+                {
+                    continue;
+                }
+
+                var newParagraph = new Paragraph(source) { NewSection = false };
+                if (!string.IsNullOrEmpty(overrideStyle))
+                {
+                    newParagraph.Extra = overrideStyle;
+                }
+
+                if (pairOriginals)
+                {
+                    var currentOriginal = Utilities.GetOriginalParagraph(sourceIndex, source, _subtitleOriginal.Paragraphs);
+                    Paragraph originalCopy;
+                    if (currentOriginal != null)
+                    {
+                        originalCopy = NewOriginalTrackParagraph(currentOriginal, currentOriginal);
+                    }
+                    else
+                    {
+                        originalCopy = NewOriginalTrackParagraph(newParagraph, null);
+                    }
+
+                    if (applyStyleToOriginal)
+                    {
+                        originalCopy.Extra = overrideStyle;
+                    }
+
+                    if (currentOriginal != null)
+                    {
+                        _subtitleOriginal.Paragraphs.Insert(_subtitleOriginal.Paragraphs.IndexOf(currentOriginal) + 1, originalCopy);
+                    }
+                    else
+                    {
+                        _subtitleOriginal.InsertParagraphInCorrectTimeOrder(originalCopy);
+                    }
+                }
+
+                if (_networkSession != null)
+                {
+                    _networkSession.TimerStop();
+                    NetworkGetSendUpdates(new List<int>(), sourceIndex + 1, newParagraph);
                 }
                 else
                 {
-                    _subtitleOriginal.InsertParagraphInCorrectTimeOrder(NewOriginalTrackParagraph(newParagraph, null));
+                    _subtitle.Paragraphs.Insert(sourceIndex + 1, newParagraph);
                 }
 
+                inserted.Add(newParagraph);
+            }
+
+            if (pairOriginals)
+            {
                 _subtitleOriginal.Renumber();
             }
 
-            if (_networkSession != null)
+            if (_networkSession == null)
             {
-                _networkSession.TimerStop();
-                NetworkGetSendUpdates(new List<int>(), firstSelectedIndex, newParagraph);
-            }
-            else
-            {
-                _subtitle.Paragraphs.Insert(firstSelectedIndex, newParagraph);
                 _subtitle.Renumber();
                 SubtitleListview1.Fill(_subtitle, _subtitleOriginal);
             }
 
-            SubtitleListview1.SelectIndexAndEnsureVisible(firstSelectedIndex, true);
+            // Leave the copies selected: for the dual-language pass the next step is walking down
+            // them pasting the source-language lines in.
+            var selectIndices = new List<int>();
+            foreach (var p in inserted)
+            {
+                var idx = _subtitle.Paragraphs.IndexOf(p);
+                if (idx >= 0 && idx < SubtitleListview1.Items.Count)
+                {
+                    selectIndices.Add(idx);
+                }
+            }
+
+            if (selectIndices.Count > 0)
+            {
+                SubtitleListview1.SelectIndexAndEnsureVisible(selectIndices[0], true);
+                SubtitleListview1.BeginUpdate();
+                foreach (var idx in selectIndices)
+                {
+                    SubtitleListview1.Items[idx].Selected = true;
+                }
+
+                SubtitleListview1.EndUpdate();
+            }
+
             UpdateSourceView();
-            ShowStatus(_language.LineInserted);
+
+            if (inserted.Count == 1 && string.IsNullOrEmpty(overrideStyle))
+            {
+                ShowStatus(_language.LineInserted);
+            }
+            else if (string.IsNullOrEmpty(overrideStyle))
+            {
+                ShowStatus($"{inserted.Count} lines duplicated");
+            }
+            else
+            {
+                ShowStatus($"{inserted.Count} lines duplicated as style \"{overrideStyle}\"");
+            }
+        }
+
+        private void DuplicateAsStyleClick(object sender, EventArgs e)
+        {
+            if (sender is ToolStripItem item)
+            {
+                DuplicateSelectedLines(item.Text);
+            }
+        }
+
+        /// <summary>
+        /// Lanes fork: builds the "Duplicate lines as style" context menu entry at runtime so
+        /// Main.Designer.cs stays untouched. The style list itself is filled on menu open, next to
+        /// the existing "Set style" submenu.
+        /// </summary>
+        private void InitializeDuplicateAsStyleMenu()
+        {
+            _duplicateAsStyleToolStripMenuItem = new ToolStripMenuItem("Duplicate lines as style")
+            {
+                Name = "duplicateAsStyleToolStripMenuItem",
+                Visible = false,
+            };
+
+            var anchor = contextMenuStripListView.Items.IndexOf(setStylesForSelectedLinesToolStripMenuItem);
+            if (anchor >= 0)
+            {
+                contextMenuStripListView.Items.Insert(anchor + 1, _duplicateAsStyleToolStripMenuItem);
+            }
+            else
+            {
+                contextMenuStripListView.Items.Add(_duplicateAsStyleToolStripMenuItem);
+            }
         }
 
         private void ToolStripSelectedClick(object sender, EventArgs e)
