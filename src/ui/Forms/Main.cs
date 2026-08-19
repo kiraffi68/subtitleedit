@@ -181,6 +181,8 @@ namespace Nikse.SubtitleEdit.Forms
         // InitializeTimeStepCombo.
         private NikseComboBox _comboBoxTimeStep;
         private Label _labelTimeStep;
+        private Button[] _typographyButtons;
+        private ToolTip _typographyToolTip;
 
         private CheckForUpdatesHelper _checkForUpdatesHelper;
         private Timer _timerCheckForUpdates;
@@ -414,6 +416,7 @@ namespace Nikse.SubtitleEdit.Forms
                 InitializeDuplicateAsStyleMenu();
                 InitializeExportBookmarksMenu();
                 InitializeTimeStepCombo();
+                InitializeTypographyButtons();
                 SetLanguage(Configuration.Settings.General.Language);
                 toolStripStatusNetworking.Visible = false;
                 labelTextLineLengths.Text = string.Empty;
@@ -35539,7 +35542,110 @@ namespace Nikse.SubtitleEdit.Forms
             _labelTimeStep.Top = labelDuration.Top;
             _labelTimeStep.Left = _comboBoxTimeStep.Left;
 
-            return _comboBoxTimeStep.Right + 9;
+            var firstLeft = _comboBoxTimeStep.Right + 9;
+            LayoutTypographyButtons(firstLeft);
+            return firstLeft;
+        }
+
+        /// <summary>
+        /// Lanes fork: one click each for the four characters an English translation needs on nearly
+        /// every line and no keyboard puts under a finger - the two curly double quotes, the curly
+        /// apostrophe and the em dash. They already exist under Edit > Insert Unicode symbol, but
+        /// that is a menu walk for something used this often.
+        ///
+        /// The buttons refuse focus on purpose. PasteIntoActiveTextBox chooses its target by asking
+        /// which text box is focused; an ordinary Button takes focus on mouse down, so the original
+        /// text box would report false and every glyph would land in the working line instead of the
+        /// line being edited.
+        /// </summary>
+        private void InitializeTypographyButtons()
+        {
+            var glyphs = new[]
+            {
+                new { Text = "\u201C", Tip = "Left double quotation mark" },
+                new { Text = "\u201D", Tip = "Right double quotation mark" },
+                new { Text = "\u2019", Tip = "Right single quotation mark (apostrophe)" },
+                new { Text = "\u2014", Tip = "Em dash" },
+            };
+
+            _typographyToolTip = new ToolTip();
+            _typographyButtons = new Button[glyphs.Length];
+            for (var i = 0; i < glyphs.Length; i++)
+            {
+                var glyph = glyphs[i].Text;
+                var button = new NoFocusButton
+                {
+                    Name = "buttonTypography" + i.ToString(CultureInfo.InvariantCulture),
+                    Text = glyph,
+                    TabStop = false,
+                    Visible = false,
+                };
+
+                button.Click += (sender, e) => InsertTypographyGlyph(glyph);
+                groupBoxEdit.Controls.Add(button);
+                UiUtil.FixFonts(button);
+
+                // Quotation marks are small strokes in a font sized for whole words, and these
+                // buttons are the height of a single row. A couple of points is the difference
+                // between reading the button and guessing at it.
+                button.Font = new Font(button.Font.FontFamily, button.Font.Size + 2f, button.Font.Style);
+                _typographyToolTip.SetToolTip(button, glyphs[i].Tip);
+                _typographyButtons[i] = button;
+            }
+        }
+
+        private void InsertTypographyGlyph(string glyph)
+        {
+            if (!InSourceView && !textBoxListViewText.Enabled)
+            {
+                return; // no subtitle loaded, nothing to insert into
+            }
+
+            PasteIntoActiveTextBox(glyph);
+        }
+
+        /// <summary>
+        /// Lanes fork: park the typography buttons in the gap on the Prev/Next row. Moving the
+        /// speaker tag "+" beside its combo emptied the right half of that row, and the row sits
+        /// level with the first line of the text box, so the glyphs end up beside the text they go
+        /// into. They are right-aligned against the text column rather than hung off Next >, so they
+        /// hold their place relative to the text box as the window is resized, and they hide instead
+        /// of colliding with Next > if the left column is ever too narrow to hold them.
+        /// </summary>
+        private void LayoutTypographyButtons(int textColumnLeft)
+        {
+            if (_typographyButtons == null || _typographyButtons.Length == 0)
+            {
+                return;
+            }
+
+            const int gap = 3;
+            var size = buttonNext.Height;
+            var stripWidth = (_typographyButtons.Length * size) + ((_typographyButtons.Length - 1) * gap);
+            var left = textColumnLeft - 9 - stripWidth;
+
+            // Compute the verdict once into a local: reading .Visible back off a control returns its
+            // actual on-screen state, not what was last assigned to it.
+            var hasRoom = left >= buttonNext.Right + 8;
+
+            foreach (var button in _typographyButtons)
+            {
+                button.SetBounds(left, buttonNext.Top, size, size);
+                button.Visible = hasRoom;
+                left += size + gap;
+            }
+        }
+
+        /// <summary>
+        /// Lanes fork: a button that never takes focus, so clicking it leaves the caret and the
+        /// selection untouched in whichever text box the user was typing in.
+        /// </summary>
+        private class NoFocusButton : Button
+        {
+            public NoFocusButton()
+            {
+                SetStyle(ControlStyles.Selectable, false);
+            }
         }
 
         /// <summary>
