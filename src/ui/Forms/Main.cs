@@ -35430,6 +35430,16 @@ namespace Nikse.SubtitleEdit.Forms
             toolStripMenuItemExport.DropDownItems.Insert(1, new ToolStripSeparator());
         }
 
+        /// <summary>
+        /// Lanes fork: values offered by the step selector, coarsest first. Every entry has to be a
+        /// whole number of centiseconds, because ASS stores time to 10 ms and anything finer is
+        /// rounded on save - the editor would show one time and the file would hold another. That
+        /// rules out 25 ms, whose odd steps land halfway between two centiseconds. 10 ms is the
+        /// finest step the format can hold, and it divides the other two, so switching steps part
+        /// way through timing a line never walks the time off the grid the coarser ones sit on.
+        /// </summary>
+        private static readonly int[] TimeStepChoices = { 100, 50, 10 };
+
         private void InitializeTimeStepCombo()
         {
             // Lanes fork: minus/plus stepper buttons on the two spinners that get nudged constantly
@@ -35457,9 +35467,13 @@ namespace Nikse.SubtitleEdit.Forms
                 DropDownStyle = ComboBoxStyle.DropDownList,
             };
 
-            _comboBoxTimeStep.Items.Add("100ms");
-            _comboBoxTimeStep.Items.Add("50ms");
-            _comboBoxTimeStep.SelectedIndex = Configuration.Settings.General.TimeUpDownStepMilliseconds == 50 ? 1 : 0;
+            foreach (var ms in TimeStepChoices)
+            {
+                _comboBoxTimeStep.Items.Add(ms + "ms");
+            }
+
+            var stepIndex = Array.IndexOf(TimeStepChoices, Configuration.Settings.General.TimeUpDownStepMilliseconds);
+            _comboBoxTimeStep.SelectedIndex = stepIndex < 0 ? 0 : stepIndex;
             _comboBoxTimeStep.SelectedIndexChanged += ComboBoxTimeStepSelectedIndexChanged;
 
             groupBoxEdit.Controls.Add(_labelTimeStep);
@@ -35472,7 +35486,12 @@ namespace Nikse.SubtitleEdit.Forms
 
         private void ComboBoxTimeStepSelectedIndexChanged(object sender, EventArgs e)
         {
-            Configuration.Settings.General.TimeUpDownStepMilliseconds = _comboBoxTimeStep.SelectedIndex == 1 ? 50 : 100;
+            var index = _comboBoxTimeStep.SelectedIndex;
+            if (index >= 0 && index < TimeStepChoices.Length)
+            {
+                Configuration.Settings.General.TimeUpDownStepMilliseconds = TimeStepChoices[index];
+            }
+
             ApplyTimeStep();
         }
 
