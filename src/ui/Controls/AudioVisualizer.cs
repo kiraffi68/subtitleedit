@@ -104,6 +104,7 @@ namespace Nikse.SubtitleEdit.Controls
         private Paragraph _prevParagraph;
         private Paragraph _nextParagraph;
         private bool _firstMove = true;
+        private bool _wholeLineMoved;
         private double _currentVideoPositionSeconds = -1;
         private WavePeakData _wavePeaks;
         private Subtitle _subtitle;
@@ -1465,6 +1466,63 @@ namespace Nikse.SubtitleEdit.Controls
             return (double)index / _wavePeaks.SampleRate;
         }
 
+        private static string _moveLineModifierText;
+        private static Keys _moveLineModifierKeys;
+
+        /// <summary>
+        /// Lanes fork: is the key that arms a whole-line drag currently down? An empty setting means
+        /// no key is required and every press inside a block can move it, which is how the waveform
+        /// behaved before the gate existed.
+        ///
+        /// Alt+Shift is the default because it is the one combination the waveform does not already
+        /// answer to. Shift on its own sets the start time on click and suppresses shot change
+        /// snapping mid drag, Control sets the end time, Control+Shift sets the start and offsets
+        /// every line after it, and Alt jumps the line to the click point. Held together, Alt and
+        /// Shift match none of those exact comparisons, so every stock gesture keeps working.
+        /// </summary>
+        private static bool IsMoveLineModifierHeld()
+        {
+            var configured = Configuration.Settings.General.WaveformMoveLineModifier;
+
+            // Parsing on every mouse move would be wasteful, and the setting only changes when it is
+            // reloaded wholesale, so a reference check is enough to spot a new string.
+            if (!ReferenceEquals(configured, _moveLineModifierText))
+            {
+                _moveLineModifierText = configured;
+                _moveLineModifierKeys = ParseModifierKeys(configured);
+            }
+
+            return _moveLineModifierKeys == Keys.None || ModifierKeys == _moveLineModifierKeys;
+        }
+
+        private static Keys ParseModifierKeys(string text)
+        {
+            var keys = Keys.None;
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return keys;
+            }
+
+            foreach (var part in text.Split('+'))
+            {
+                switch (part.Trim().ToLowerInvariant())
+                {
+                    case "control":
+                    case "ctrl":
+                        keys |= Keys.Control;
+                        break;
+                    case "alt":
+                        keys |= Keys.Alt;
+                        break;
+                    case "shift":
+                        keys |= Keys.Shift;
+                        break;
+                }
+            }
+
+            return keys;
+        }
+
         private void WaveformMouseDown(object sender, MouseEventArgs e)
         {
             if (_wavePeaks == null)
@@ -1476,6 +1534,7 @@ namespace Nikse.SubtitleEdit.Controls
             _mouseDownParagraphType = MouseDownParagraphType.None;
             _gapAtStart = -1;
             _firstMove = true;
+            _wholeLineMoved = false;
             if (e.Button == MouseButtons.Left)
             {
                 _buttonDownTimeTicks = Stopwatch.GetTimestamp();
@@ -1548,6 +1607,29 @@ namespace Nikse.SubtitleEdit.Controls
                 else
                 {
                     var p = GetParagraphAtMilliseconds(milliseconds, e.Y);
+
+                    // Lanes fork: pressing inside a block used to arm the whole-line move at once, so
+                    // the gesture that places the playhead and the gesture that moves a line were the
+                    // same press. A few pixels of hand travel while clicking then shifted the line by
+                    // however far the cursor drifted - tens of milliseconds, no visible feedback, and
+                    // nothing to notice until the line is out of sync an episode later. The move now
+                    // has to be asked for. Without the modifier the press is inert: it neither drags
+                    // the line nor paints a new selection over it, which is what pressing inside a
+                    // block did before, and the click that follows still selects and seeks normally.
+                    if (p != null && !IsMoveLineModifierHeld())
+                    {
+                        Cursor = Cursors.Default;
+                        NewSelectionParagraph = null;
+                        _mouseMoveStartX = e.X;
+                        _mouseMoveEndX = e.X;
+                        SetMinAndMax();
+
+                        // Leaving _mouseDown false is what makes the press inert: every branch of
+                        // WaveformMouseMove that edits times is behind it.
+                        _mouseDown = false;
+                        return;
+                    }
+
                     if (p != null)
                     {
                         _oldParagraph = new Paragraph(p);
@@ -2006,6 +2088,13 @@ namespace Nikse.SubtitleEdit.Controls
                 {
                     Cursor = Cursors.VSplit;
                 }
+                else if (ModifierKeys != Keys.None && IsMoveLineModifierHeld() &&
+                         GetParagraphAtMilliseconds(milliseconds, e.Y) != null)
+                {
+                    // Lanes fork: with the arming key down, the hand says which blocks the next press
+                    // would pick up. Without it there is deliberately nothing to show.
+                    Cursor = Cursors.Hand;
+                }
                 else
                 {
                     Cursor = Cursors.Default;
@@ -2272,6 +2361,7 @@ namespace Nikse.SubtitleEdit.Controls
                                 return;
                             }
 
+                            _wholeLineMoved = true;
                             OnTimeChanged?.Invoke(this, new ParagraphEventArgs(seconds, _mouseDownParagraph, _oldParagraph, _mouseDownParagraphType) { AdjustMs = _mouseDownParagraph.StartTime.TotalMilliseconds - oldStart });
                         }
                     }
@@ -2482,6 +2572,16 @@ namespace Nikse.SubtitleEdit.Controls
 
         private void WaveformMouseClick(object sender, MouseEventArgs e)
         {
+            // Lanes fork: a drag short enough to still read as a click would otherwise fire one of
+            // the modifier gestures below on top of the move it just made, so Control+drag would
+            // shift the line and then set its end time from where the cursor happened to stop. If
+            // the press moved a line it was a drag, whatever distance it covered.
+            if (_wholeLineMoved)
+            {
+                _wholeLineMoved = false;
+                return;
+            }
+
             if (e.Button == MouseButtons.Left && OnSingleClick != null)
             {
                 var diff = Math.Abs(_mouseMoveStartX - e.X);

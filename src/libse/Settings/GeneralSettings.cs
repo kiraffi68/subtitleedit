@@ -207,6 +207,7 @@ namespace Nikse.SubtitleEdit.Core.Settings
         public bool SplitAtSentenceBoundary { get; set; }
         public bool OriginalPairByStyle { get; set; }
         public int TimeUpDownStepMilliseconds { get; set; }
+        public string WaveformMoveLineModifier { get; set; }
         public int ClearStatusBarAfterSeconds { get; set; }
         public string Company { get; set; }
         public bool MoveVideo100Or500MsPlaySmallSample { get; set; }
@@ -398,7 +399,12 @@ namespace Nikse.SubtitleEdit.Core.Settings
             SplitRemovesDashes = true;
             SplitAtSentenceBoundary = true; // Lanes fork: split text at sentence boundary nearest the split position
             OriginalPairByStyle = true; // Lanes fork: pair working/original lines within the same ASSA style (track)
-            TimeUpDownStepMilliseconds = 100; // Lanes fork: step for the start time / duration arrows, 100 or 50
+            TimeUpDownStepMilliseconds = 100; // Lanes fork: step for the start time / duration arrows
+
+            // Lanes fork: key that has to be held before a press inside a waveform block can drag it.
+            // Accepts Control, Alt, Shift or a "+"-joined combination of them; empty restores the old
+            // behaviour where any press inside a block could move it.
+            WaveformMoveLineModifier = "Alt+Shift";
             ClearStatusBarAfterSeconds = 10;
             MoveVideo100Or500MsPlaySmallSample = false;
             DisableVideoAutoLoading = false;
